@@ -152,7 +152,6 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
         col1, col2 = st.columns(2)
         starttime = undecidedtokeninfolist[st.session_state.index][1][0] / fps
 
-        
         with col1:
             print("preparing video")
             video_file = open(videodirectory + videoname, "rb")
@@ -170,7 +169,6 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
         st.write(f"Total frame: {undecidedtokeninfolist[st.session_state.index][3]}")
 
         # 버튼 표시
-        print(buttons[st.session_state.index])
         strval=''
         for button_name in buttons[st.session_state.index]:
             str_button_name = ''
@@ -207,11 +205,10 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
     st.write(f"Responses: {st.session_state.responses}")
 
 
-def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
+def sthanddecider(tokenlist, keyhandlist):
     if 'index' not in st.session_state:
         st.session_state.index = 0
 
-    tokenhandlist = []
     pressedfingerlist = [None for k in range(len(tokenlist))]
     undecidedtokeninfolist = []
 
@@ -287,7 +284,7 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
 
         while c < len(pressedfingers):
             finger=pressedfingers[c]
-            if finger[1]/totalframe <0.4: # 어떤 손가락이 총 frame의 50프로를 넘지 않으면 후보에서 삭제.
+            if finger[1]/totalframe <0.5: # 어떤 손가락이 총 frame의 50프로를 넘지 않으면 후보에서 삭제.
                 pressedfingers.pop(c)
                 c -= 1
             c += 1
@@ -300,6 +297,7 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
                 if pressedfingerlist[i] == miditest300[i]:
                     correct += 1
                 else: print(f"tokennumber: {i}, gt: {miditest300[i]}, pred:{pressedfingerlist[i]}")
+
         elif c == 0:
             pressedfingerlist[i] = "Noinfo"
             noinfo += 1
@@ -307,7 +305,8 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
         
         if i==299:
             st.write(f'Accuracy: {correct/(300-noinfo-undecided)}, total noinfo: {noinfo}, total undecided: {undecided}')
-
+    return pressedfingerlist, undecidedtokeninfolist
+def decider(pressedfingerlist,undecidedtokeninfolist, fps, videoname, newmidiname):
     decision=button_input(undecidedtokeninfolist, fps, videoname, newmidiname)
     if decision:   #decidion=None 인 경우 제외
         if len(decision) == len(undecidedtokeninfolist)+1: # +1: complete
@@ -316,7 +315,7 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
                     pressedfingerlist[j] = decision[0]
                     decision.pop(0)
 
-    return tokenhandlist,pressedfingerlist  # Output: [Pitch(0~95(가상건반은 C0~ G8까지 있음)), token number, hand]
+    return pressedfingerlist  # Output: [Pitch(0~95(가상건반은 C0~ G8까지 있음)), token number, hand]
 
 def videodata():
     st.sidebar.success("Select the menu above.")
@@ -427,17 +426,32 @@ def prefinger():
                 tokentoframeinfo(tokenlist, frame_count), handfingerpositionlist, keyboard, tokenlist
             )
         
+        fingerinfo,undecidedfingerlist = sthanddecider(
+            tokenlist,
+            prefingercorrespond,
+        )
+
         with open(
             dirname
-            + "/prefingercorrespond_"
+            + "/fingerinfo_"
             + videoname
             + "_"
             + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
             + ".pkl",
             "wb",
         ) as f:
-            pickle.dump(prefingercorrespond, f)
+            pickle.dump(fingerinfo, f)
 
+        with open(
+            dirname
+            + "/undecidedfingerlist_"
+            + videoname
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            + ".pkl",
+            "wb",
+        ) as f:
+            pickle.dump(undecidedfingerlist, f)
         st.write("Prefinger info saved")
 
 
@@ -449,7 +463,6 @@ def label():
     st.write("# ASDF: Automated System for Detecting Fingering")
     st.sidebar.success("Select the menu above.")
 
-    
     files = os.listdir(mididirectory)
     newfiles = []
     for file in files:
@@ -476,10 +489,8 @@ def label():
         videoname = selected_option[:-4] + ".mp4"
 
     st.write("Selected MIDI:", selected_option)
-
     video = cv2.VideoCapture(filepath + videoname)
     frame_rate = video.get(cv2.CAP_PROP_FPS)
-    tokenlist = miditotoken(newmidiname[:-4], frame_rate, "simplified")
 
     dirname = (
             filepath
@@ -490,23 +501,28 @@ def label():
     
     with open(
             dirname
-            + "/prefingercorrespond_"
+            + "/fingerinfo_"
             + videoname
             + "_"
             + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
             + ".pkl",
             "rb",
     ) as f: 
-        prefingercorrespond = pickle.load(f)
+        fingerinfo = pickle.load(f)
 
-    handinfo, fingerinfo = sthanddecider(
-        tokenlist,
-        prefingercorrespond,
-        frame_rate,
-        videoname,
-        newmidiname,
+    with open(
+            dirname
+            + "/undecidedfingerlist_"
+            + videoname
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            + ".pkl",
+            "rb",
+    ) as f: 
+        undecidedfingerlist = pickle.load(f)
+    fingerinfo = decider(
+        fingerinfo, undecidedfingerlist, frame_rate, videoname, newmidiname
     )
-
     st.write(fingerinfo)
 
 
