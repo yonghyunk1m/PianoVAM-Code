@@ -3,7 +3,7 @@ from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 import cv2
 import numpy as np
-
+from stqdm import stqdm
 # STEP 1: Import the necessary modules.
 import sys
 
@@ -267,7 +267,9 @@ def detectfloatingframes(handlist, frame_count, faultyframes):
     metricavgcounter = 0
     floatingframes = []
     handdistancelist, lowavg = avgcalc(handlist)
-    for handsinfo in handlist:
+    index=0
+    for _ in stqdm(range(len(handlist)), desc="Detecting floating hands..."):
+        handsinfo = handlist[index]
         for hand in handsinfo:
             metriclist.append(
                 [
@@ -286,6 +288,7 @@ def detectfloatingframes(handlist, frame_count, faultyframes):
                     ),
                 ]
             )
+        index+=1
 
     for metric in metriclist:
         metricavg += metric[2]
@@ -317,11 +320,11 @@ def distortioncoefficient(i, distortion):
             * (i - 26)
             / abs(i - 26)
             * (-((abs(i - 26) - 13) ** 2) + 169)
-        )  ## Fits in our recording environment.
+        )  ## Fits in our (MACLAB@KAIST) recording environment.
 
 
 def generatekeyboard(
-    lu, ru, ld, rd, blackratio, distortion=0
+    lu, ru, ld, rd, blackratio, distortion=0,
 ):  # 05/12 update: 검은 건반을 가운데가 아니라 실제 건반에 맞게 위치 조정
     # 05/14 update: 카메라 각도에 맞게 검은 건반 위치 미세 조정
     # 07/02 update: x축 distortion 보정
@@ -652,32 +655,43 @@ def handpositiondetector(handsinfo, floatingframes, keylist):
     # floatingframes=detectfloatingframes(handlist,frame_count)
     pressedkeyslist = []
     pressingfingerslist = []
+    fingertippositionslist = []
     for hand in handsinfo:
         if [hand.handframe, hand.handtype] in floatingframes:
             pressedkeyslist.append([hand.handtype, "floating"])
             pressingfingerslist.append(["floating"])
+            fingertippositionslist.append(["floating"])
             continue
         pressedkeylist = []
         pressedkeylist.append(hand.handtype)
         pressingfingerlist = []
+        fingertippositionlist=[]
         for i in [4, 8, 12, 16, 20]:
             for j in range(len(keylist)):
                 if (
                     inside_or_outside(
-                        keylist[j], [hand.handlandmark[i].x, hand.handlandmark[i].y]
+                        keylist[j], [hand.handlandmark[i].x*0.9+hand.handlandmark[i-1].x*0.1, hand.handlandmark[i].y*0.9+hand.handlandmark[i-1].y*0.1]
                     )
                     == 1
                 ):
                     pressedkeylist.append(j)
                     pressingfingerlist.append(int(i / 4))
+                    fingertippositionlist.append([hand.handlandmark[i].x*0.9+hand.handlandmark[i-1].x*0.1, hand.handlandmark[i].y*0.9+hand.handlandmark[i-1].y*0.1])
 
-        if len(pressedkeylist) == 1:
+
+        if len(pressedkeylist) <= 1:
             pressedkeylist.append("floating")  # 가끔 안될때가있음
             pressingfingerlist.append("floating")
+            fingertippositionlist.append("floating")
+
         pressedkeyslist.append(pressedkeylist)
         pressingfingerslist.append(pressingfingerlist)
-
-    return [pressedkeyslist, pressingfingerslist]
+        fingertippositionslist.append(fingertippositionlist)
+    if len(handsinfo) == 0:
+        pressedkeyslist= ['Noinfo']
+        pressingfingerslist= ['Noinfo']
+        fingertippositionslist= ['Noinfo']
+    return [pressedkeyslist, pressingfingerslist, fingertippositionslist] #[그 frame에서 눌린 key들의 모임(중복 허용: 대부분 열 손가락의 정보가 다있음), 손가락 번호, 손가락 위치]
 
 
 def inside_or_outside(polygon, point):

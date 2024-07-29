@@ -2,9 +2,9 @@ from miditok import REMI, TokenizerConfig
 from symusic import Score
 from floatinghands import *
 import math
-import streamlit as st
 # STEP 1: Import the necessary modules.
-
+from shapely.geometry import Polygon, Point
+import geopandas
 import sys
 
 sys.path.append("..")
@@ -107,184 +107,119 @@ def tokentoframeinfo(tokenlist, frame_count):
     return framemidilist
     # Output: frame별 [눌린 키, token number]
 
+def betweendotpolygon(dot, polygon):
+    poly=Polygon([(vertices[0], vertices[1]) for vertices in polygon])
+    gpoly=geopandas.GeoSeries(poly)
+    point=geopandas.GeoSeries([Point(dot[0], dot[1])])
+    return float(gpoly.distance(point).iloc[0])
+def keydistance(keyboard, key, fingertipposition):
+    distance = 0
 
-def handfingercorresponder(framemidilist, framehandfingerlist):
+    dlist=[]
+
+    if inside_or_outside(keyboard[key], fingertipposition)==1:
+        return 0
+    elif inside_or_outside(keyboard[key], fingertipposition)!=1:
+        dlist.append(betweendotpolygon(fingertipposition, keyboard[key]))
+    distance += min(dlist)
+    return distance
+
+def onsetcoefficient(keyonset, key, frame):
+    if frame in keyonset[key]:
+        return 2
+    else:
+        return 0.75
+def handfingercorresponder(framemidilist, framehandfingerlist, keyboard, tokenlist):
     # framehandfingerlist[i][0]: framehandlist
     # framehandfingerlist[i][1]: framefingerlist
+    # framehandfingerlist[i][2]: fingertippositionlist
+    #Extract onset frames
+    keyonset={}
+    for token in tokenlist:
+        if token[1] in keyonset.keys():
+            keyonset[token[1]]+=list(range(token[0],int(token[0]+0.2*(token[2]-token[0]))))
+        else:
+            keyonset[token[1]]=list(range(token[0],int(token[0]+0.2*(token[2]-token[0]))))
+
     keyhandlist = []
     handtypes = ["Left", "Right"]
-
-    for i in range(len(framemidilist)):  # 각 frame마다
-        framekeylist = framemidilist[i]
+    halfkeyboarddistance=(keyboard[0][1][0]-keyboard[0][0][0])/2
+    
+    frame=0
+    for _ in stqdm(range(len(framemidilist)), desc="Correponding frame images to midi..."):
+        framekeylist = framemidilist[frame]
         for key in framekeylist:  # 각 frame에서 눌려져 있는 상태의 각 key마다
             mindiff = 88
             mindiffhand = "Noinfo"
             fingercount = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-            handspositioninfo = framehandfingerlist[i][0]
+            handspositioninfo = framehandfingerlist[frame][0]
+            fingertippositionsinfo = framehandfingerlist[frame][2]
             handcounter = 0
-            for handpositioninfo in handspositioninfo:  # 해당 frame의 각 손마다
-                if len(handpositioninfo) == 1:
+            for i in range(len(handspositioninfo)):  # 해당 frame의 각 손마다
+                handpositioninfo=handspositioninfo[i]
+                fingertippositioninfo=fingertippositionsinfo[i]
+                if len(handpositioninfo) <= 1 or framehandfingerlist[frame][1][0] == "Noinfo":
                     continue
                 if handpositioninfo[1] != "floating":
                     for j in range(1, len(handpositioninfo)):
                         if abs(key[0] - handpositioninfo[j]) < mindiff:
                             mindiff = abs(key[0] - handpositioninfo[j])
                             mindiffhand = handpositioninfo[0]
-                        if (
-                            abs(key[0] - handpositioninfo[j]) < 2
-                        ):  # 손가락 candidate 오차범위: 반음
-                            if handpositioninfo[0] == "Left":
+                        if handpositioninfo[0] == "Left":
+                            if (abs(key[0] - handpositioninfo[j]) == 0):  # 손가락과 frame midi 일치
                                 fingercount[
-                                    framehandfingerlist[i][1][
+                                    framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
-                                ] += 1  # 1~5
-                            if handpositioninfo[0] == "Right":
+                                ] += onsetcoefficient(keyonset, key[0], i)*1  # 1~5
+                            
+                            elif keydistance(keyboard, key[0], fingertippositioninfo[j-1])<halfkeyboarddistance:  # 손가락과 frame midi 반 건반 오차 (euclidean distance) (0.5만큼 보정)
                                 fingercount[
-                                    framehandfingerlist[i][1][
+                                    framehandfingerlist[frame][1][
+                                        handspositioninfo.index(handpositioninfo)
+                                    ][j - 1]
+                                ] += onsetcoefficient(keyonset, key[0], i)*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2 # 1~5
+                        if handpositioninfo[0] == "Right":
+                            if (abs(key[0] - handpositioninfo[j]) < 1):  # 손가락과 frame midi 일치
+                                fingercount[
+                                    framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
                                     + 5
-                                ] += 1  # 6~10
+                                ] += onsetcoefficient(keyonset, key[0], i)*1  # 6~10
+                            elif keydistance(keyboard, key[0], fingertippositioninfo[j-1])<halfkeyboarddistance:  # 손가락과 frame midi 반 건반 오차 (euclidean distance) (0.5만큼 보정)
+                                fingercount[
+                                    framehandfingerlist[frame][1][
+                                        handspositioninfo.index(handpositioninfo)
+                                    ][j - 1]
+                                    + 5
+                                ] += onsetcoefficient(keyonset, key[0], i)*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2  # 6~10
                     handcounter += 1
                 if handpositioninfo[1] == "floating":
                     mindiffhand = handtypes[handtypes.index(handpositioninfo[0]) - 1]
             if handcounter == 0:
                 mindiffhand = "Noinfo"
             if (
-                handcounter == 1 and mindiff > 2 and mindiffhand != "Noinfo"
-            ):  # 오차범위: 온음
+                handcounter == 1 and mindiff > 1 and mindiffhand != "Noinfo"
+            ):  # 오차범위: 반음
                 mindiffhand = handtypes[handtypes.index(mindiffhand) - 1]
             key.append(mindiffhand)
             key.append(fingercount)
         keyhandlist.append(framekeylist)
+        frame+=1
     return keyhandlist  # [[key, tokennumber, hand, fingercount]]
 
 
 pitch_list = [
-    "A0",
-    "A#0",
-    "B0",
-    "C1",
-    "C#1",
-    "D1",
-    "D#1",
-    "E1",
-    "F1",
-    "F#1",
-    "G1",
-    "G#1",
-    "A1",
-    "A#1",
-    "B1",
-    "C2",
-    "C#2",
-    "D2",
-    "D#2",
-    "E2",
-    "F2",
-    "F#2",
-    "G2",
-    "G#2",
-    "A2",
-    "A#2",
-    "B2",
-    "C3",
-    "C#3",
-    "D3",
-    "D#3",
-    "E3",
-    "F3",
-    "F#3",
-    "G3",
-    "G#3",
-    "A3",
-    "A#3",
-    "B3",
-    "C4",
-    "C#4",
-    "D4",
-    "D#4",
-    "E4",
-    "F4",
-    "F#4",
-    "G4",
-    "G#4",
-    "A4",
-    "A#4",
-    "B4",
-    "C5",
-    "C#5",
-    "D5",
-    "D#5",
-    "E5",
-    "F5",
-    "F#5",
-    "G5",
-    "G#5",
-    "A5",
-    "A#5",
-    "B5",
-    "C6",
-    "C#6",
-    "D6",
-    "D#6",
-    "E6",
-    "F6",
-    "F#6",
-    "G6",
-    "G#6",
-    "A6",
-    "A#6",
-    "B6",
-    "C7",
-    "C#7",
-    "D7",
-    "D#7",
-    "E7",
-    "F7",
-    "F#7",
-    "G7",
-    "G#7",
-    "A7",
-    "A#7",
-    "B7",
+    "A0","A#0","B0",
+    "C1","C#1","D1","D#1","E1","F1","F#1","G1","G#1","A1","A#1","B1",
+    "C2","C#2","D2","D#2","E2","F2","F#2","G2","G#2","A2","A#2","B2",
+    "C3","C#3","D3","D#3","E3","F3","F#3","G3","G#3","A3","A#3","B3",
+    "C4","C#4","D4","D#4","E4","F4","F#4","G4","G#4","A4","A#4","B4",
+    "C5","C#5","D5","D#5","E5","F5","F#5","G5","G#5","A5","A#5","B5",
+    "C6","C#6","D6","D#6","E6","F6","F#6","G6","G#6","A6","A#6","B6",
+    "C7","C#7","D7","D#7","E7","F7","F#7","G7","G#7","A7","A#7","B7",
     "C8",
-    "C#8",
-    "D8",
-    "D#8",
-    "E8",
-    "F8",
-    "F#8",
-    "G8",
-    "G#8",
-    "A8",
-    "A#8",
-    "B8",
-    "C9",
-    "C#9",
-    "D9",
-    "D#9",
-    "E9",
-    "F9",
-    "F#9",
-    "G9",
-    "G#9",
-    "A9",
-    "A#9",
-    "B9",
-    "C10",
-    "C#10",
-    "D10",
-    "D#10",
-    "E10",
-    "F10",
-    "F#10",
-    "G10",
-    "G#10",
-    "A10",
-    "A#10",
-    "B10",
 ]
 
 # 각 token마다 가장 많이 채택된 손 대응하기
@@ -364,24 +299,13 @@ def handdecider(tokenlist, keyhandlist, fps):
         # tokenlist[i].pop(1)  # End position
         # tokenlist[i][0]=pitch_list[tokenlist[i][0]+12]
         tokenlist[i].pop(2)  # End position
-        tokenlist[i][1] = pitch_list[tokenlist[i][1] + 12]
+        tokenlist[i][1] = pitch_list[tokenlist[i][1]]
         lefthandcounter = 0
         righthandcounter = 0
         noinfocounter = 0
         lhindex = []
         rhindex = []
-        fingerindex = [
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            0,
+        fingerindex = [[],[],[],[],[],[],[],[],[],[],0,
         ]  # 10개의 손가락과 Noinfo counter
         for j in range(len(keyhandlist)):
             framekeyhandinfo = keyhandlist[j]

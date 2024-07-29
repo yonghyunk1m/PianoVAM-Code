@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import os
-import time
 
 # STEP 1: Import the necessary modules.
 import mediapipe as mp
@@ -12,6 +11,7 @@ from floatinghands import *
 from midicomparison import *
 import pickle
 from tqdm.auto import tqdm
+from stqdm import stqdm
 # Note: file order is main>evaluate>midicomparison>floatinghands
 
 # STEP 2: Create an HandLandmarker object.
@@ -32,25 +32,18 @@ options = vision.HandLandmarkerOptions(
 detector = vision.HandLandmarker.create_from_options(options)
 
 distortion = 0.001
-keyboard = generatekeyboard(
-    lu=[0.0614, 1 - 0.6750],
-    ru=[0.9593, 1 - 0.6824],
-    ld=[0.0614, 1 - 0.4796],
-    rd=[0.9593, 1 - 0.4796],
-    blackratio=0.65,
-    distortion=distortion,
-)  # miditest
+keyboard = generatekeyboard(lu=[0.0614, 1 - 0.6750],ru=[0.9593, 1 - 0.6824],ld=[0.0614, 1 - 0.4796],rd=[0.9593, 1 - 0.4796],blackratio=0.65,distortion=distortion)  # miditest
 # keyboard=generatekeyboard(lu=[0.0651,0.4287],ru=[0.9380, 0.4148],ld=[0.0661,0.6],rd=[0.9380,0.5916], blackratio=0.65, distortion=distortion)  #Handcrossing3
 # keyboard=generatekeyboard(lu=[0.0557,1-0.359],ru=[1-193/1920, 1-385/1080],ld=[0.0505,1-0.207],rd=[1-185/1920,1-218/1080], blackratio=0.5, distortion=distortion) #sonatinetest
 # keyboard=generatekeyboard(lu=[100/1920,1-538/1080],ru=[1-159/1920, 1-538/1080],ld=[100/1920,1-361/1080],rd=[1-154/1920,1-358/1080], blackratio=0.56, distortion=distortion) #BWV846
 # keyboard=generatekeyboard(lu=[0,516/1080],ru=[1, 516/1080],ld=[0,755/1080],rd=[1,755/1080], blackratio=0.66, distortion=distortion) #Rousseau
 filepath = "./videocapture/"
-videoname = "miditestcropped"
+videoname = "BWV846"+ ".mp4"
 midiname = videoname
-video = cv2.VideoCapture(filepath + videoname + ".mp4")
+video = cv2.VideoCapture(filepath + videoname)
 dirname = (
     filepath
-    + videoname
+    + videoname[:-4]
     + "_"
     + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
 )
@@ -58,7 +51,19 @@ frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 frame_rate = video.get(cv2.CAP_PROP_FPS)
 
 
-def datagenerate():
+def datagenerate(videoname):
+    import time as timemodule
+    start = timemodule.time()
+    video = cv2.VideoCapture(filepath + videoname)
+    dirname = (
+        filepath
+        + videoname[:-4]  #.mp4 제거
+        + "_"
+        + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+    )
+    frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_rate = video.get(cv2.CAP_PROP_FPS)
+
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
@@ -70,15 +75,18 @@ def datagenerate():
         print("Could not Open :", filepath)
         exit(0)
     pbar = tqdm(total=frame_count)
+    
     while video.isOpened():
-        if count < frame_count:
-            ret, image = video.read()
-            cv2.imwrite(dirname + "/frame%d.jpg" % count, image)
-            count += 1
-            pbar.update(1)
-        else:
+        for _ in stqdm(range(frame_count), desc="Generating Frame images from video..."):
+            if count < frame_count:
+                ret, image = video.read()
+                cv2.imwrite(dirname + "/frame%d.jpg" % count, image)
+                count += 1
+                pbar.update(1)
+        if count >= frame_count:
             break
     pbar.close()
+
     video.release()
 
     # STEP 3: Load the input image.
@@ -94,7 +102,8 @@ def datagenerate():
     tempimglist = []
 
     pbar2 = tqdm(total=file_count)
-    for frame in range(file_count):
+    frame=0
+    for _ in stqdm(range(file_count), desc="Generating hand information from framewise images..."):
         img = Image.open(dirname + "/frame%d.jpg" % frame)
         img_np = np.array(img)
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
@@ -114,6 +123,7 @@ def datagenerate():
         handlist.append(handsinfo)
         handtypelist.append([hand.handtype for hand in handsinfo])
         pbar2.update(1)
+        frame += 1
     faultyframe = faultyframes(handlist)
     pbar2.close()
     print("Calculating faulty frames...")
@@ -121,7 +131,7 @@ def datagenerate():
     with open(
         dirname
         + "/floatingframes_"
-        + videoname
+        + videoname[:-4]
         + "_"
         + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
         + ".pkl",
@@ -132,7 +142,7 @@ def datagenerate():
     with open(
         dirname
         + "/handlist_"
-        + videoname
+        + videoname[:-4]
         + "_"
         + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
         + ".pkl",
@@ -144,7 +154,9 @@ def datagenerate():
     print(
         f"faulty frames:{len(faultyframe)}, nohand frames:{len(nohandframelist)} floating hands:{len(floatingframes)}/{len(handlist)}"
     )
-    for frame in range(file_count):
+    pbar3 = tqdm(total=file_count)
+    frame=0
+    for _ in stqdm(range(file_count), desc="Generating new images with hand information..."):
         image, detection_result = tempimglist[frame]
         new_file_name = f"frame_annotated{frame}.jpg"
         if frame in nohandframelist:
@@ -156,23 +168,25 @@ def datagenerate():
             dirname + "/" + new_file_name,
             cv2.cvtColor(annotated_image, cv2.COLOR_BGR2RGB),
         )
+        pbar3.update(1)
+        frame += 1
+    pbar3.close()
     image, detection_result = tempimglist[max(0, file_count - 100)]
     keyboard_image = draw_keyboard_on_image(image.numpy_view(), keyboard)
     cv2.imwrite(
         dirname + "/" + "keyboard.jpg", cv2.cvtColor(keyboard_image, cv2.COLOR_BGR2RGB)
     )
     print("Image generated and saved")
+    datatime = timemodule.time()
+    print(f"Data generation time: {datatime-start: .5f} sec")
 
 
-start = time.time()
+
 
 ##############################
-# datagenerate() ##############
+#datagenerate() ##############
 ##############################
 
-
-datatime = time.time()
-print(f"Data generation time: {datatime-start: .5f} sec")
 
 
 def handdetokenizer(originaltokenlist, tokenhandinfo):
@@ -203,7 +217,7 @@ def midiprocess():
     with open(
         dirname
         + "/floatingframes_"
-        + videoname
+        + videoname[:-4]
         + "_"
         + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
         + ".pkl",
@@ -214,7 +228,7 @@ def midiprocess():
     with open(
         dirname
         + "/handlist_"
-        + videoname
+        + videoname[:-4]
         + "_"
         + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
         + ".pkl",
@@ -255,5 +269,3 @@ def midiprocess():
 # midiprocess() ##########
 #########################
 
-miditime = time.time()
-print(f"Midi generation time: {miditime-datatime: .5f} sec")

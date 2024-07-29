@@ -2,7 +2,6 @@
 import streamlit as st
 import fortepyan as ff
 import sys, os
-from streamlit_pianoroll import from_fortepyan
 from midicomparison import *
 from main import (
     filepath,
@@ -10,11 +9,54 @@ from main import (
     min_hand_presence_confidence,
     min_tracking_confidence,
     keyboard,
+    datagenerate,
 )
 import mido
 import pickle
 import pretty_midi
 import cv2
+import stroll    # https://github.com/exeex/midi-visualization with some modifications in order to use in streamlit environment
+
+miditest300=[
+    9, 10, 7, 5, 1, 2, 8, 6, 7, 5, 
+    8, 2, 7, 7, 6, 10, 1, 5, 9, 9,
+    10, 5, 1, 6, 2, 7, 7, 8, 5, 1,
+    2, 7, 2, 5, 7, 5, 6, 10, 8, 5,
+    7, 6, 1, 2, 9, 8, 1, 5, 6, 8,
+
+    7, 7, 8, 6, 1, 2, 6, 7, 5, 1, 
+    2, 8, 10, 1, 8, 5, 6, 8, 1, 2, 
+    8, 6, 5, 1, 2, 10, 1, 10, 1, 9, 
+    2, 8, 6, 5, 2, 1, 5, 1, 2, 8,
+    6, 9, 5, 1, 8, 7, 6, 1, 9, 5,
+
+    8, 9, 6, 5, 10, 1, 8, 1, 5, 8, 
+    6, 7, 5, 1, 6, 8, 7, 1, 6, 8, 
+    7, 1, 7, 6, 5, 1, 8, 1, 6, 1,
+    10, 5, 6, 6, 7, 10, 1, 5, 5, 7, 
+    9, 6, 10, 1, 2, 5, 5, 5, 1, 5,
+
+    1, 9, 7, 6, 10, 2, 9, 1, 7, 10, 
+    6, 2, 6, 8, 10, 5, 1, 2, 7, 6,
+    8, 10, 2, 1, 5, 1, 5, 2, 1, 5,
+    6, 1, 5, 7, 5, 1, 6, 9, 1, 10, 
+    1, 10, 6, 5, 7, 1, 10, 2, 1, 5,
+
+    6, 2, 5, 7, 6, 1, 2, 1, 5, 8,
+    6, 5, 1, 10, 2, 1, 10, 2, 6, 8,
+    10, 1, 5, 7, 2, 7, 6, 5, 1, 2,
+    5, 1, 7, 6, 2, 6, 10, 8, 5, 1, 
+    2, 6, 5, 1, 9, 7, 6, 5, 1, 6, 
+
+    9, 7, 2, 7, 10, 9, 5, 6, 1, 1,
+    5, 10, 7, 6, 9, 5, 1, 7, 9, 10,
+    5, 1, 6, 5, 1, 10, 6, 2, 7, 10,
+    6, 5, 1, 10, 6, 5, 1, 6, 10, 10,
+    6, 2, 5, 10, 6, 6, 1, 5, 7, 6
+]
+
+
+st.set_page_config(layout="wide")
 
 mididirectory = "./midiconvert/"
 videodirectory = "./videocapture/"
@@ -48,6 +90,8 @@ def intro():
     """
     )
 
+    st.write("Settings (three dots at upperright side) - use wide mode")
+
 def initialize_state():
     if 'index' not in st.session_state:
         st.session_state.index = 0
@@ -58,6 +102,9 @@ def initialize_state():
 
 # 버튼 입력 함수
 def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
+    if len(undecidedtokeninfolist) == 0:
+        st.write("No fingers to choose!")
+        return ["Complete"]
     buttons=[]
     for tokeninfo in undecidedtokeninfolist:
         buttons.append(tokeninfo[2])
@@ -67,7 +114,7 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
     def button_click(button_name):
         if st.session_state.index < len(buttons):
             st.session_state.history.append(st.session_state.index)
-            st.session_state.responses.append(button_name[0])
+            st.session_state.responses.append([button_name[0],undecidedtokeninfolist[st.session_state.index][0]])   #Finger, token numebr
             st.session_state.index += 1
         st.rerun()
 
@@ -91,44 +138,48 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
         return st.session_state.responses
     
     # 현재 반복 단계에 따라 버튼을 표시
-    st.write(
-            f"#### Choose the actual finger which pressed {undecidedtokeninfolist[st.session_state.index][1][1]} at frame {undecidedtokeninfolist[st.session_state.index][1][0]} or time {str(int(undecidedtokeninfolist[st.session_state.index][1][0]/fps//60)).zfill(2)}:{str(math.floor(undecidedtokeninfolist[st.session_state.index][1][0]/fps%60)).zfill(2)}:"
-            + format(
-                math.floor(undecidedtokeninfolist[st.session_state.index][1][0] / fps % 60 * 1000) / 1000
-                - math.floor(undecidedtokeninfolist[st.session_state.index][1][0] / fps % 60),
-                ".2f",
-                )[2:]
-            + " : "
-            )
-    
-    col1, col2 = st.columns(2)
-    starttime = undecidedtokeninfolist[st.session_state.index][1][0] / fps
-
-    
-    with col1:
-        video_file = open(videodirectory + videoname, "rb")
-        st.video(video_file, start_time=starttime)
-
-    with col2:
-        midi_file_path = mididirectory + newmidiname
-        rednoteindex=filter_midi_notes(midi_file_path, undecidedtokeninfolist[st.session_state.index][0])
-
-        piece = ff.MidiPiece.from_file(
-            f"{mididirectory}trimmed{undecidedtokeninfolist[st.session_state.index][0]}.mid"
-        )  # Midifile의 apply_sustain을 False로 함.
-        from_fortepyan(piece=piece, show_bird_view=False)
-
-        os.remove(f"{mididirectory}trimmed{undecidedtokeninfolist[st.session_state.index][0]}.mid")
-
     if st.session_state.index < len(buttons):
+        st.write(
+                f"#### Choose the actual finger which pressed {undecidedtokeninfolist[st.session_state.index][1][1]}({pitch_list.index(undecidedtokeninfolist[st.session_state.index][1][1])}) at frame {undecidedtokeninfolist[st.session_state.index][1][0]} or time {str(int(undecidedtokeninfolist[st.session_state.index][1][0]/fps//60)).zfill(2)}:{str(math.floor(undecidedtokeninfolist[st.session_state.index][1][0]/fps%60)).zfill(2)}:"
+                + format(
+                    math.floor(undecidedtokeninfolist[st.session_state.index][1][0] / fps % 60 * 1000) / 1000
+                    - math.floor(undecidedtokeninfolist[st.session_state.index][1][0] / fps % 60),
+                    ".2f",
+                    )[2:]
+                + " : "
+                )
+    
+        col1, col2 = st.columns(2)
+        starttime = undecidedtokeninfolist[st.session_state.index][1][0] / fps
+
+        
+        with col1:
+            print("preparing video")
+            video_file = open(videodirectory + videoname, "rb")
+            st.video(video_file, start_time=starttime)
+            print("completed preparing video")
+        with col2:
+            print("preparing midi")
+            midi_file_path = mididirectory + newmidiname
+            rednoteindex=filter_midi_notes(midi_file_path, undecidedtokeninfolist[st.session_state.index][0])
+            mid=stroll.MidiFile(f"{mididirectory}trimmed{undecidedtokeninfolist[st.session_state.index][0]}.mid")
+            mid.draw_roll(rednoteidx=rednoteindex)
+            os.remove(f"{mididirectory}trimmed{undecidedtokeninfolist[st.session_state.index][0]}.mid")
+            print("completed preparing midi")
         st.write(f"Decided {st.session_state.index + 1} of {len(buttons)} undecided fingerings")
+        st.write(f"Total frame: {undecidedtokeninfolist[st.session_state.index][3]}")
 
         # 버튼 표시
         print(buttons[st.session_state.index])
+        strval=''
         for button_name in buttons[st.session_state.index]:
             str_button_name = ''
             for idx, val in enumerate(button_name):
-                str_button_name += str(val) + (' frames' if idx == len(button_name) -1 else ': ')
+                if val <= 5:
+                    strval=f"L{val}"
+                elif val >= 6:
+                    strval=f"R{val-5}"
+                str_button_name += (strval if idx != len(button_name) -1 else str(val)) + (' frames' if idx == len(button_name) -1 else ': ')
             if st.button(str_button_name, key=f"{st.session_state.index}-{button_name[0]}"):
                 button_click(button_name)
                 break
@@ -164,18 +215,24 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
     pressedfingerlist = [None for k in range(len(tokenlist))]
     undecidedtokeninfolist = []
 
+    #for evaluation
+    correct=0
+    undecided=0
+    noinfo=0
     for i in range(len(tokenlist)):
         # tokenlist[i].pop(0)  #Total Start Position (frame)
         # tokenlist[i].pop(1)  # End position
         # tokenlist[i][0]=pitch_list[tokenlist[i][0]+12]
+        totalframe=tokenlist[i][2]-tokenlist[i][0]
         tokenlist[i].pop(2)  # End position
-        tokenlist[i][1] = pitch_list[tokenlist[i][1] + 12]
+        tokenlist[i][1] = pitch_list[tokenlist[i][1]]
         lefthandcounter = 0
         righthandcounter = 0
         noinfocounter = 0
         lhindex = []
         rhindex = []
         fingerindex = [[],[],[],[],[],[],[],[],[],[],0]  # 10개의 손가락과 Noinfo counter
+        fingerscore = [0,0,0,0,0, 0,0,0,0,0]
         for j in range(len(keyhandlist)):
             framekeyhandinfo = keyhandlist[j]
             for keyhandinfo in framekeyhandinfo:
@@ -186,6 +243,7 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
                         for k in range(1, 11):
                             if keyhandinfo[3][k] != 0:
                                 fingerindex[k - 1].append(j)
+                                fingerscore[k - 1] += keyhandinfo[3][k]
                         if keyhandinfo[3] == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]:
                             fingerindex[10] += 1
                     elif keyhandinfo[2] == "Right":
@@ -194,6 +252,7 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
                         for k in range(1, 11):
                             if keyhandinfo[3][k] != 0:
                                 fingerindex[k - 1].append(j)
+                                fingerscore[k - 1] += keyhandinfo[3][k]
                         if keyhandinfo[3] == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]:
                             fingerindex[10] += 1
                     elif keyhandinfo[2] == "Noinfo":
@@ -213,36 +272,71 @@ def sthanddecider(tokenlist, keyhandlist, fps, videoname, newmidiname):
 
         else:
             tokenlist[i].append("Noinfo")
-        fingercount = [len(fingerindex[i]) for i in range(0, 10)]
         # if lefthandcounter>0 and righthandcounter>0 or noinfocounter>0:
         # print(f"Tokennumber:{i},   Tokenpitch={pitch_list[tokenlist[i][1]]},    lefthandcounter={lhindex},     righthandcounter={rhindex}, noinfocounter ={noinfocounter}")
         print(
-            f"Tokennumber:{i},   Tokenpitch={tokenlist[i][1]},    lefthandcounter={len(lhindex)},     righthandcounter={len(rhindex)}, noinfocounter ={noinfocounter}, fingercount={fingercount}, fingernoinfo={fingerindex[10]}"
+            f"Tokennumber:{i},   Tokenpitch={tokenlist[i][1]},    lefthandcounter={len(lhindex)},     righthandcounter={len(rhindex)}, noinfocounter ={noinfocounter}, fingercount={fingerscore}, fingernoinfo={fingerindex[10]}"
         )
         pressedfingers = []
-        
         totalfingercount = 0
         c = 0
         for j in range(10):
-            if fingercount[j] != 0:
-                pressedfingers.append([j + 1,fingercount[j]])
-                totalfingercount += fingercount[j]
-        if len(pressedfingers) == 0:
-            pressedfingerlist[i] = "Noinfo"
-        if len(pressedfingers) == 1:
+            if fingerscore[j] != 0:
+                pressedfingers.append([j + 1,fingerscore[j]])
+                totalfingercount += fingerscore[j]
 
+        while c < len(pressedfingers):
+            finger=pressedfingers[c]
+            if finger[1]/totalframe <0.4: # 어떤 손가락이 총 frame의 50프로를 넘지 않으면 후보에서 삭제.
+                pressedfingers.pop(c)
+                c -= 1
+            c += 1
+        if c > 1:   # 후보 손가락이 두개 이상일때
+            undecidedtokeninfolist.append([i,tokenlist[i],pressedfingers,totalframe])  #Token number, token info, finger candidate, frame count of the token
+            undecided += 1
+        elif c == 1:
             pressedfingerlist[i] = pressedfingers[0][0]
-        if len(pressedfingers) >= 2:
-            for finger in pressedfingers:
-                if finger[1]/totalfingercount >0.75: # 어떤 손가락이 전체의 75프로를 넘으면 그냥 그 손가락으로 간주.
-                    pressedfingerlist[i]=finger[0]
-                    c = 1
-            if c ==0:
-                undecidedtokeninfolist.append([i,tokenlist[i],pressedfingers])  #Token number, token info, finger candidate
+            if i <= 299:
+                if pressedfingerlist[i] == miditest300[i]:
+                    correct += 1
+                else: print(f"tokennumber: {i}, gt: {miditest300[i]}, pred:{pressedfingerlist[i]}")
+        elif c == 0:
+            pressedfingerlist[i] = "Noinfo"
+            noinfo += 1
+    
+        
+        if i==299:
+            st.write(f'Accuracy: {correct/(300-noinfo-undecided)}, total noinfo: {noinfo}, total undecided: {undecided}')
 
     decision=button_input(undecidedtokeninfolist, fps, videoname, newmidiname)
+    if decision:   #decidion=None 인 경우 제외
+        if len(decision) == len(undecidedtokeninfolist)+1: # +1: complete
+            for j in range(len(pressedfingerlist)):
+                if pressedfingerlist[j] == "Noinfo" and decision[0][1]==j:
+                    pressedfingerlist[j] = decision[0]
+                    decision.pop(0)
 
     return tokenhandlist,pressedfingerlist  # Output: [Pitch(0~95(가상건반은 C0~ G8까지 있음)), token number, hand]
+
+def videodata():
+    st.sidebar.success("Select the menu above.")
+    st.write('make mediapipe data from video')
+    files = os.listdir(filepath)
+    newfiles = []
+    for file in files:
+        if ".mp4" in file:
+            newfiles.append(file)
+
+    selected_option = st.selectbox(
+        "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
+        newfiles,
+    )
+    if st.button('Generate mediapipe data'):
+        datagenerate(selected_option)
+        st.write(f'Generated data of {filepath + selected_option}')
+
+    
+    
 
 def preprocess():
     st.write('delete smart tempo which is automatically recorded by logic')
@@ -250,7 +344,7 @@ def preprocess():
     files = os.listdir(mididirectory)
     newfiles = []
     for file in files:
-        if not "_" in files:
+        if not "_" in str(file):
             newfiles.append(file)
     st.write("Settings (three dots at upperright side) - use wide mode")
     selected_option = st.selectbox(
@@ -260,6 +354,96 @@ def preprocess():
     if st.button('Delete smart tempo'):
         delete_smart_tempo(mididirectory + selected_option)
         st.write(f'Changed {mididirectory + selected_option}.')
+
+def prefinger():
+    st.write("# ASDF: Automated System for Detecting Fingering")
+    st.sidebar.success("Select the menu above.")
+
+    
+    files = os.listdir(mididirectory)
+    newfiles = []
+    for file in files:
+        if "_singletempo" in str(file):
+            newfiles.append(file)
+    st.write("Settings (three dots at upperright side) - use wide mode")
+    selected_option = st.selectbox(
+        "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
+        newfiles,
+    )
+
+    # Change the tempo to the desired BPM
+    
+    # Save the modified MIDI file
+
+    newmidiname = selected_option
+    videoname = selected_option.split("_")[0] + ".mp4"
+
+    st.write("Selected MIDI:", selected_option)
+
+    if st.button("Precorrespond fingering"):
+        st.write(
+            'fingering pre-labeling started'
+        )
+        video = cv2.VideoCapture(filepath + videoname)
+        frame_rate = video.get(cv2.CAP_PROP_FPS)
+        frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        dirname = (
+            filepath
+            + videoname[:-4]
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+        )
+        with open(
+            dirname
+            + "/floatingframes_"
+            + videoname[:-4]
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            + ".pkl",
+            "rb",
+        ) as f:
+            floatingframes = pickle.load(f)
+
+        with open(
+            dirname
+            + "/handlist_"
+            + videoname[:-4]
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            + ".pkl",
+            "rb",
+        ) as f:
+            handlist = pickle.load(f)
+
+        handfingerpositionlist = []
+        for handsinfo in handlist:
+            handfingerposition = handpositiondetector(
+                handsinfo, floatingframes, keyboard
+            )
+            handfingerpositionlist.append(handfingerposition)
+        tokenlist = miditotoken(newmidiname[:-4], frame_rate, "simplified")
+        prefingercorrespond =handfingercorresponder(
+                tokentoframeinfo(tokenlist, frame_count), handfingerpositionlist, keyboard, tokenlist
+            )
+        
+        with open(
+            dirname
+            + "/prefingercorrespond_"
+            + videoname
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            + ".pkl",
+            "wb",
+        ) as f:
+            pickle.dump(prefingercorrespond, f)
+
+        st.write("Prefinger info saved")
+
+
+            
+    
+
 
 def label():
     st.write("# ASDF: Automated System for Detecting Fingering")
@@ -271,7 +455,7 @@ def label():
     for file in files:
         if not "_" in files:
             newfiles.append(file)
-    st.write("Settings (three dots at upperright side) - use wide mode")
+    
     selected_option = st.selectbox(
         "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
         newfiles,
@@ -295,55 +479,40 @@ def label():
 
     video = cv2.VideoCapture(filepath + videoname)
     frame_rate = video.get(cv2.CAP_PROP_FPS)
-    frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    tokenlist = miditotoken(newmidiname[:-4], frame_rate, "simplified")
 
     dirname = (
-        filepath
-        + videoname[:-4]
-        + "_"
-        + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
-    )
-    with open(
-        dirname
-        + "/floatingframes_"
-        + videoname[:-4]
-        + "_"
-        + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
-        + ".pkl",
-        "rb",
-    ) as f:
-        floatingframes = pickle.load(f)
-
-    with open(
-        dirname
-        + "/handlist_"
-        + videoname[:-4]
-        + "_"
-        + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
-        + ".pkl",
-        "rb",
-    ) as f:
-        handlist = pickle.load(f)
-
-    handfingerpositionlist = []
-    for handsinfo in handlist:
-        handfingerposition = handpositiondetector(
-            handsinfo, floatingframes, keyboard
+            filepath
+            + videoname[:-4]
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
         )
-        handfingerpositionlist.append(handfingerposition)
-    tokenlist = miditotoken(newmidiname[:-4], frame_rate, "simplified")
+    
+    with open(
+            dirname
+            + "/prefingercorrespond_"
+            + videoname
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            + ".pkl",
+            "rb",
+    ) as f: 
+        prefingercorrespond = pickle.load(f)
+
     handinfo, fingerinfo = sthanddecider(
         tokenlist,
-        handfingercorresponder(
-            tokentoframeinfo(tokenlist, frame_count), handfingerpositionlist
-        ),
+        prefingercorrespond,
         frame_rate,
         videoname,
         newmidiname,
     )
 
+    st.write(fingerinfo)
+
+
 def filter_midi_notes(input_midi, target_note_index):
     # Load the MIDI file
+    
     mid = mido.MidiFile(input_midi)
     target_note_new_index = -1
 
@@ -361,34 +530,55 @@ def filter_midi_notes(input_midi, target_note_index):
                 all_notes.append(msg)
 
         # Determine the range of notes to keep
-        start_index = max(0, target_note_index - 20)
-        end_index = min(len(all_notes) - 1, target_note_index + 20)
+        start_index = max(0, target_note_index - 15)
+        end_index = min(len(all_notes) - 1, target_note_index + 15)
 
         # Create a set of indices to keep
-        indices_to_keep = range(start_index,end_index + 1)
+        indices_to_keep = range(start_index, end_index + 1)
 
-        # Add messages to the new track while maintaining timing
+        active_notes = []
+
         current_note_index = 0
+        new_note_index = 0
         for msg in track:
-            if msg.type in ['note_on', 'note_off']:
+            
+            if msg.type == 'note_on' and msg.velocity > 0:  # Note_off가 Note_on + Note.velocity=0으로 표시되는 경우가 있음. ???? ㅋㅋ...
                 if current_note_index in indices_to_keep:
                     new_track.append(msg)
+                    active_notes.append(msg.note)
                     if current_note_index == target_note_index:
-                        target_note_new_index = len(new_track) - 1
-                if msg.type == 'note_on':
-                    current_note_index += 1
+                        target_note_new_index = new_note_index
+                    new_note_index += 1
+                current_note_index += 1
+            elif msg.type == 'note_on' and msg.velocity == 0 or msg.type == 'note_off':
+                if msg.note in active_notes:
+                    if msg.type =='note_on' and msg.velocity == 0:
+                        new_msg=mido.Message('note_off', channel=msg.channel, note=msg.note, velocity=0, time=msg.time)
+                        new_track.append(new_msg)
+                    elif msg.type == 'note_off': new_track.append(msg)
+                    active_notes.remove(msg.note)
             else:
-                new_track.append(msg)
+                if current_note_index in indices_to_keep:
+                    new_track.append(msg)
+        for msg in new_track:
+            print(msg)
+        # Ensure all active notes are properly closed
+        if not active_notes:
+            assert("Some notes are not closed")
 
         new_mid.tracks.append(new_track)
-
+    if target_note_new_index == -1:
+        assert("Target note not found")
     new_mid.save(f"{mididirectory}trimmed{target_note_index}.mid")
-    return(target_note_new_index)
+    
+    return target_note_new_index
      
 
 page_names_to_funcs = {
     "Intro": intro,
-    "Preprocess": preprocess,    
+    "Delete smart tempo": preprocess,
+    "Generate mediapipe data" : videodata, 
+    "Pre-finger labeling": prefinger,   
     "Label": label,
 }
 
