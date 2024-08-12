@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import os
-
+from psutil import Process
 # STEP 1: Import the necessary modules.
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -16,8 +16,8 @@ from stqdm import stqdm
 
 # STEP 2: Create an HandLandmarker object.
 base_options = python.BaseOptions(model_asset_path="hand_landmarker.task")
-min_hand_detection_confidence = 0.85
-min_hand_presence_confidence = 0.8
+min_hand_detection_confidence = 0.8
+min_hand_presence_confidence = 0.7
 min_tracking_confidence = 0.5
 VisionRunningMode = mp.tasks.vision.RunningMode
 
@@ -49,7 +49,6 @@ dirname = (
 )
 frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 frame_rate = video.get(cv2.CAP_PROP_FPS)
-
 
 def datagenerate(videoname):
     import time as timemodule
@@ -83,6 +82,7 @@ def datagenerate(videoname):
                 cv2.imwrite(dirname + "/frame%d.jpg" % count, image)
                 count += 1
                 pbar.update(1)
+            del ret, image
         if count >= frame_count:
             break
     pbar.close()
@@ -104,26 +104,32 @@ def datagenerate(videoname):
     pbar2 = tqdm(total=file_count)
     frame=0
     for _ in stqdm(range(file_count), desc="Generating hand information from framewise images..."):
-        img = Image.open(dirname + "/frame%d.jpg" % frame)
-        img_np = np.array(img)
-        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
-        time = frame * int(1000 / frame_rate)
-        detection_result = detector.detect_for_video(image, timestamp_ms=time)
-        tempimglist.append([image, detection_result])
-        if len(detection_result.handedness) == 0:
-            nohandframelist.append(frame)
-        handsinfo = [
-            handclass(
-                handtype=detection_result.handedness[j][0].category_name,
-                handlandmark=detection_result.hand_landmarks[j],
-                handframe=frame,
-            )
-            for j in range(len(detection_result.handedness))
-        ]
-        handlist.append(handsinfo)
-        handtypelist.append([hand.handtype for hand in handsinfo])
-        pbar2.update(1)
-        frame += 1
+        with Image.open(dirname + "/frame%d.jpg" % frame) as img:
+            img_np = np.array(img)
+            image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
+            time = frame * int(1000 / frame_rate)
+            detection_result = detector.detect_for_video(image, timestamp_ms=time)
+            # tempimglist.append([image, detection_result])                          # 메모리 관리를 위해 좀 느리더라도 뒤에서 image는 다시 로드해준다.
+            tempimglist.append(detection_result)
+            if len(detection_result.handedness) == 0:
+                nohandframelist.append(frame)
+            handsinfo = [
+                handclass(
+                    handtype=detection_result.handedness[j][0].category_name,
+                    handlandmark=detection_result.hand_landmarks[j],
+                    handframe=frame,
+                )
+                for j in range(len(detection_result.handedness))
+            ]
+            handlist.append(handsinfo)
+            handtypelist.append([hand.handtype for hand in handsinfo])
+            if frame == max(0, file_count - 100):
+                keyboard_image = draw_keyboard_on_image(image.numpy_view(), keyboard)
+                cv2.imwrite(
+                    dirname + "/" + "keyboard.jpg", cv2.cvtColor(keyboard_image, cv2.COLOR_BGR2RGB)
+                )
+            pbar2.update(1)
+            frame += 1
     faultyframe = faultyframes(handlist)
     pbar2.close()
     print("Calculating faulty frames...")
@@ -157,25 +163,26 @@ def datagenerate(videoname):
     pbar3 = tqdm(total=file_count)
     frame=0
     for _ in stqdm(range(file_count), desc="Generating new images with hand information..."):
-        image, detection_result = tempimglist[frame]
-        new_file_name = f"frame_annotated{frame}.jpg"
-        if frame in nohandframelist:
-            new_file_name = new_file_name[:-4] + "_NoDetect" + ".jpg"
-        annotated_image = draw_landmarks_and_floatedness_on_image(
-            image.numpy_view(), detection_result, frame, floatingframes
-        )
-        cv2.imwrite(
-            dirname + "/" + new_file_name,
-            cv2.cvtColor(annotated_image, cv2.COLOR_BGR2RGB),
-        )
+        #image, detection_result = tempimglist[frame]
+        with Image.open(dirname + "/frame%d.jpg" % frame) as img:
+            img_np = np.array(img)
+            image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
+            detection_result = tempimglist[frame]
+            
+            new_file_name = f"frame_annotated{frame}.jpg"
+            if frame in nohandframelist:
+                new_file_name = new_file_name[:-4] + "_NoDetect" + ".jpg"
+            annotated_image = draw_landmarks_and_floatedness_on_image(
+                image.numpy_view(), detection_result, frame, floatingframes
+            )
+            cv2.imwrite(
+                dirname + "/" + new_file_name,
+                cv2.cvtColor(annotated_image, cv2.COLOR_BGR2RGB),
+            )
         pbar3.update(1)
         frame += 1
     pbar3.close()
-    image, detection_result = tempimglist[max(0, file_count - 100)]
-    keyboard_image = draw_keyboard_on_image(image.numpy_view(), keyboard)
-    cv2.imwrite(
-        dirname + "/" + "keyboard.jpg", cv2.cvtColor(keyboard_image, cv2.COLOR_BGR2RGB)
-    )
+    
     print("Image generated and saved")
     datatime = timemodule.time()
     print(f"Data generation time: {datatime-start: .5f} sec")

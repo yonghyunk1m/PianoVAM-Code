@@ -1,8 +1,8 @@
 # ASDF: Automated System for Detecting Fingering
 import streamlit as st
-import fortepyan as ff
 import sys, os
 from midicomparison import *
+from fingergt import *
 from main import (
     filepath,
     min_hand_detection_confidence,
@@ -16,44 +16,6 @@ import pickle
 import pretty_midi
 import cv2
 import stroll    # https://github.com/exeex/midi-visualization with some modifications in order to use in streamlit environment
-
-miditest300=[
-    9, 10, 7, 5, 1, 2, 8, 6, 7, 5, 
-    8, 2, 7, 7, 6, 10, 1, 5, 9, 9,
-    10, 5, 1, 6, 2, 7, 7, 8, 5, 1,
-    2, 7, 2, 5, 7, 5, 6, 10, 8, 5,
-    7, 6, 1, 2, 9, 8, 1, 5, 6, 8,
-
-    7, 7, 8, 6, 1, 2, 6, 7, 5, 1, 
-    2, 8, 10, 1, 8, 5, 6, 8, 1, 2, 
-    8, 6, 5, 1, 2, 10, 1, 10, 1, 9, 
-    2, 8, 6, 5, 2, 1, 5, 1, 2, 8,
-    6, 9, 5, 1, 8, 7, 6, 1, 9, 5,
-
-    8, 9, 6, 5, 10, 1, 8, 1, 5, 8, 
-    6, 7, 5, 1, 6, 8, 7, 1, 6, 8, 
-    7, 1, 7, 6, 5, 1, 8, 1, 6, 1,
-    10, 5, 6, 6, 7, 10, 1, 5, 5, 7, 
-    9, 6, 10, 1, 2, 5, 5, 5, 1, 5,
-
-    1, 9, 7, 6, 10, 2, 9, 1, 7, 10, 
-    6, 2, 6, 8, 10, 5, 1, 2, 7, 6,
-    8, 10, 2, 1, 5, 1, 5, 2, 1, 5,
-    6, 1, 5, 7, 5, 1, 6, 9, 1, 10, 
-    1, 10, 6, 5, 7, 1, 10, 2, 1, 5,
-
-    6, 2, 5, 7, 6, 1, 2, 1, 5, 8,
-    6, 5, 1, 10, 2, 1, 10, 2, 6, 8,
-    10, 1, 5, 7, 2, 7, 6, 5, 1, 2,
-    5, 1, 7, 6, 2, 6, 10, 8, 5, 1, 
-    2, 6, 5, 1, 9, 7, 6, 5, 1, 6, 
-
-    9, 7, 2, 7, 10, 9, 5, 6, 1, 1,
-    5, 10, 7, 6, 9, 5, 1, 7, 9, 10,
-    5, 1, 6, 5, 1, 10, 6, 2, 7, 10,
-    6, 5, 1, 10, 6, 5, 1, 6, 10, 10,
-    6, 2, 5, 10, 6, 6, 1, 5, 7, 6
-]
 
 
 st.set_page_config(layout="wide")
@@ -108,8 +70,7 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
     buttons=[]
     for tokeninfo in undecidedtokeninfolist:
         buttons.append(tokeninfo[2])
-    initialize_state()
-
+    
     # 버튼 클릭 핸들러
     def button_click(button_name):
         if st.session_state.index < len(buttons):
@@ -284,7 +245,7 @@ def sthanddecider(tokenlist, keyhandlist):
 
         while c < len(pressedfingers):
             finger=pressedfingers[c]
-            if finger[1]/totalframe <0.5: # 어떤 손가락이 총 frame의 50프로를 넘지 않으면 후보에서 삭제.
+            if finger[1]/totalframe <0.4: # 어떤 손가락이 총 frame의 50프로를 넘지 않으면 후보에서 삭제.
                 pressedfingers.pop(c)
                 c -= 1
             c += 1
@@ -293,18 +254,20 @@ def sthanddecider(tokenlist, keyhandlist):
             undecided += 1
         elif c == 1:
             pressedfingerlist[i] = pressedfingers[0][0]
-            if i <= 299:
-                if pressedfingerlist[i] == miditest300[i]:
+            if i <= 149:
+                if pressedfingerlist[i] == chopinwaltz16_150[i]:
                     correct += 1
-                else: print(f"tokennumber: {i}, gt: {miditest300[i]}, pred:{pressedfingerlist[i]}")
+                else: print(f"tokennumber: {i}, gt: {chopinwaltz16_150[i]}, pred:{pressedfingerlist[i]}")
 
         elif c == 0:
             pressedfingerlist[i] = "Noinfo"
             noinfo += 1
     
         
-        if i==299:
-            st.write(f'Accuracy: {correct/(300-noinfo-undecided)}, total noinfo: {noinfo}, total undecided: {undecided}')
+        if i==149:
+            st.write(f'150 Accuracy: {correct/(150-noinfo-undecided)}, 150 noinfo: {noinfo}, 150 undecided: {undecided}')
+        if i==len(tokenlist)-1:
+            st.write(f'total noinfo: {noinfo}, total undecided: {undecided}')
     return pressedfingerlist, undecidedtokeninfolist
 def decider(pressedfingerlist,undecidedtokeninfolist, fps, videoname, newmidiname):
     decision=button_input(undecidedtokeninfolist, fps, videoname, newmidiname)
@@ -343,7 +306,7 @@ def preprocess():
     files = os.listdir(mididirectory)
     newfiles = []
     for file in files:
-        if not "_" in str(file):
+        if not "_singletempo" in str(file):
             newfiles.append(file)
     st.write("Settings (three dots at upperright side) - use wide mode")
     selected_option = st.selectbox(
@@ -375,7 +338,7 @@ def prefinger():
     # Save the modified MIDI file
 
     newmidiname = selected_option
-    videoname = selected_option.split("_")[0] + ".mp4"
+    videoname = '_'.join(selected_option.split("_")[:-1]) + ".mp4"
 
     st.write("Selected MIDI:", selected_option)
 
@@ -460,18 +423,15 @@ def prefinger():
 
 
 def label():
+    initialize_state()
     st.write("# ASDF: Automated System for Detecting Fingering")
     st.sidebar.success("Select the menu above.")
 
     files = os.listdir(mididirectory)
-    newfiles = []
-    for file in files:
-        if not "_" in files:
-            newfiles.append(file)
     
     selected_option = st.selectbox(
         "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
-        newfiles,
+        files,
     )
 
     # Change the tempo to the desired BPM
@@ -483,8 +443,8 @@ def label():
     else:
         newmidiname = selected_option[:-4] + "_singletempo.mid"
 
-    if "_" in selected_option:
-        videoname = selected_option.split("_")[0] + ".mp4"
+    if "_singletempo" in selected_option:
+        videoname = '_'.join(selected_option.split("_")[:-1]) + ".mp4"
     else:
         videoname = selected_option[:-4] + ".mp4"
 
@@ -588,7 +548,125 @@ def filter_midi_notes(input_midi, target_note_index):
     new_mid.save(f"{mididirectory}trimmed{target_note_index}.mid")
     
     return target_note_new_index
-     
+
+def annotate():
+    initialize_state()
+
+    st.write("# ASDF: Automated System for Detecting Fingering")
+    st.sidebar.success("Select the menu above.")
+
+    files = os.listdir(mididirectory)
+    newfiles = []
+    for file in files:
+        if "_singletempo" in file:
+            newfiles.append(file)
+    
+    selected_option = st.selectbox(
+        "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
+        newfiles,
+    )
+    if "_singletempo.mid" in selected_option:
+        newmidiname = selected_option
+    else:
+        newmidiname = selected_option[:-4] + "_singletempo.mid"
+
+    if "_singletempo" in selected_option:
+        videoname = '_'.join(selected_option.split("_")[:-1]) + ".mp4"
+    else:
+        videoname = selected_option[:-4] + ".mp4"
+    st.write("Selected MIDI:", selected_option)
+    video = cv2.VideoCapture(filepath + videoname)
+    frame_rate = video.get(cv2.CAP_PROP_FPS)
+    tokeninfolist=miditotoken(newmidiname[:-4], frame_rate, "simplified")
+    # 버튼 클릭 핸들러
+    def button_click():
+        if st.session_state.index < 150:
+            st.session_state.history.append(st.session_state.index)
+            st.session_state.responses+=user_input.split(',')   #Finger, token numebr
+            st.session_state.index += len(user_input.split(','))
+        st.rerun()
+
+    # Undo 핸들러
+    def undo():
+        if st.session_state.history:
+            st.session_state.index -=1
+            st.session_state.responses.pop()
+        st.rerun()
+
+    # Reset 핸들러
+    def reset():
+        st.session_state.index = 0
+        st.session_state.history = []
+        st.session_state.responses = []
+        st.rerun()
+
+    # Complete 핸들러
+    def complete():
+        st.session_state.responses.append("Complete")
+        return st.session_state.responses
+    
+    # 현재 반복 단계에 따라 버튼을 표시
+    if st.session_state.index < 150:
+        st.write(
+                f"#### Choose the actual finger which pressed {tokeninfolist[st.session_state.index][1]}({pitch_list[tokeninfolist[st.session_state.index][1]]}) at frame {tokeninfolist[st.session_state.index][0]} or time {str(int(tokeninfolist[st.session_state.index][0]/frame_rate//60)).zfill(2)}:{str(math.floor(tokeninfolist[st.session_state.index][0]/frame_rate%60)).zfill(2)}:"
+                + format(
+                    math.floor(tokeninfolist[st.session_state.index][0] / frame_rate % 60 * 1000) / 1000
+                    - math.floor(tokeninfolist[st.session_state.index][0] / frame_rate % 60),
+                    ".2f",
+                    )[2:]
+                + " : "
+                )
+    
+        col1, col2 = st.columns(2)
+        starttime = math.floor(tokeninfolist[st.session_state.index][0] / frame_rate)
+        print(starttime)
+        with col1:
+            print("preparing video")
+            video_file = open(videodirectory + videoname, "rb")
+            st.video(video_file, start_time=starttime)
+            print("completed preparing video")
+        with col2:
+            print("preparing midi")
+            midi_file_path = mididirectory + newmidiname
+            rednoteindex=filter_midi_notes(midi_file_path, st.session_state.index)
+            mid=stroll.MidiFile(f"{mididirectory}trimmed{st.session_state.index}.mid")
+            mid.draw_roll(rednoteidx=rednoteindex)
+            os.remove(f"{mididirectory}trimmed{st.session_state.index}.mid")
+            print("completed preparing midi")
+        st.write(f"Decided {st.session_state.index} of 150")
+
+        # 버튼 표시
+        user_input=st.text_input("Enter finger number from 1 to 10, comma between multiple fingers with no blank space")
+        if st.button('next'):
+            button_click()
+    else:
+        st.write("Completed all steps")
+
+    # Complete 버튼 표시
+    if st.session_state.index >= 150:
+        if st.button("Complete"):
+            responses = complete()
+            st.write(f"Responses: {responses}")
+            file=open(f'{newmidiname[:-16]}.txt', 'a')   #_singletempo.mid
+            for response in responses:
+                w=file.write(f'{response}, ')
+            file.close()
+
+    # Undo 버튼 표시
+    if st.session_state.history:
+        if st.button("Undo"):
+            undo()
+
+    # Reset 버튼 표시
+    if st.session_state.index >= 150:
+        if st.button("Reset"):
+            reset()
+
+    # 현재 상태 및 응답 출력
+    st.write(f"Current Index: {st.session_state.index}")
+    st.write(f"Responses: {st.session_state.responses}")
+
+
 
 page_names_to_funcs = {
     "Intro": intro,
@@ -596,6 +674,7 @@ page_names_to_funcs = {
     "Generate mediapipe data" : videodata, 
     "Pre-finger labeling": prefinger,   
     "Label": label,
+    "Groundtruth annotation": annotate
 }
 
 demo_name = st.sidebar.selectbox("**MENU** 🍽️", page_names_to_funcs.keys())

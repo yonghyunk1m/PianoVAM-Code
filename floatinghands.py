@@ -59,8 +59,9 @@ def draw_landmarks_on_image(rgb_image, detection_result):
             FONT_THICKNESS,
             cv2.LINE_AA,
         )
-
-    return annotated_image
+    annotatedimage=annotated_image
+    annotated_image.release()
+    return annotatedimage
 
 
 def draw_landmarks_and_floatedness_on_image(
@@ -114,8 +115,8 @@ def draw_landmarks_and_floatedness_on_image(
             FONT_THICKNESS,
             cv2.LINE_AA,
         )
-
-    return annotated_image
+    annotatedimage=annotated_image
+    return annotatedimage
 
 
 def draw_keyboard_on_image(rgb_image, keylist):
@@ -260,7 +261,6 @@ def mymetric(
     value = value / l
     return ((c * thehand.distancesum) + (1 - c) * value) - 0.3 * lowavg
 
-
 def detectfloatingframes(handlist, frame_count, faultyframes):
     metriclist = []
     metricavg = 0
@@ -297,13 +297,16 @@ def detectfloatingframes(handlist, frame_count, faultyframes):
 
     bighandcounter = 0
     for metric in metriclist:
-        if metric[2] > metricavg * 1.2:
+        if metric[2] > metricavg * 1.4:   #bighand: 영상에 포함된 앞뒤의 매우 큰 손 부분을 잘라주기 위함.
             bighandcounter += 1
     for metric in metriclist:
         if (
-            metric[2] > metricavg * (1.145 - 1.3 * bighandcounter / len(metriclist))
+            metric[2] > metricavg * (1.3 - 1.3 * bighandcounter / len(metriclist))
         ):  # Differs from how many and how intensive of floating occurs in the whole playing
             floatingframes.append([metric[0], metric[1]])
+
+    #영상 길이가 짧으면 결과가 이상하게 나와서
+    floatingframes=[]
 
     return floatingframes
 
