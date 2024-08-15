@@ -15,7 +15,7 @@ from stqdm import stqdm
 # Note: file order is main>evaluate>midicomparison>floatinghands
 
 # STEP 2: Create an HandLandmarker object.
-base_options = python.BaseOptions(model_asset_path="hand_landmarker.task")
+base_options = python.BaseOptions(model_asset_path="./ASDF/hand_landmarker.task")
 min_hand_detection_confidence = 0.8
 min_hand_presence_confidence = 0.7
 min_tracking_confidence = 0.5
@@ -37,7 +37,7 @@ keyboard = generatekeyboard(lu=[0.0614, 1 - 0.6750],ru=[0.9593, 1 - 0.6824],ld=[
 # keyboard=generatekeyboard(lu=[0.0557,1-0.359],ru=[1-193/1920, 1-385/1080],ld=[0.0505,1-0.207],rd=[1-185/1920,1-218/1080], blackratio=0.5, distortion=distortion) #sonatinetest
 # keyboard=generatekeyboard(lu=[100/1920,1-538/1080],ru=[1-159/1920, 1-538/1080],ld=[100/1920,1-361/1080],rd=[1-154/1920,1-358/1080], blackratio=0.56, distortion=distortion) #BWV846
 # keyboard=generatekeyboard(lu=[0,516/1080],ru=[1, 516/1080],ld=[0,755/1080],rd=[1,755/1080], blackratio=0.66, distortion=distortion) #Rousseau
-filepath = "./videocapture/"
+filepath = "./ASDF/videocapture/"
 videoname = "BWV846"+ ".mp4"
 midiname = videoname
 video = cv2.VideoCapture(filepath + videoname)

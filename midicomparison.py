@@ -17,7 +17,7 @@ sys.path.append("..")
 
 
 def generatetokenizer(file_name, fps, highres=False):
-    filepath = "./midiconvert/"
+    filepath = "./ASDF/midiconvert/"
     print(f"midi: {filepath}{file_name}.mid")
     midi = Score(filepath + file_name + ".mid")
     if not midi.tempos:
@@ -127,10 +127,13 @@ def keydistance(keyboard, key, fingertipposition):
 def onsetcoefficient(keyonset, key, frame, mode='off'):
     if mode == 'off':
         return 1
-    if frame in keyonset[key]:
-        return 2
+    if key in keyonset.keys():
+        if frame in keyonset[key]:
+            return 2
+        else:
+            return 0.75
     else:
-        return 0.75
+        return 1
     
 def exception1(key1,key2): #치는 음이 백건이고 후보의 손끝이 흑건 위에 있으면 그 후보는 제외해도 됨.
     white_keys=[0,2,3]
@@ -147,10 +150,11 @@ def handfingercorresponder(framemidilist, framehandfingerlist, keyboard, tokenli
     #Extract onset frames
     keyonset={}
     for token in tokenlist:
-        if token[1] in keyonset.keys():
-            keyonset[token[1]]+=list(range(token[0],math.ceil(token[0]+0.2*(token[2]-token[0]))))
-        else:
-            keyonset[token[1]]=list(range(token[0],math.ceil(token[0]+0.2*(token[2]-token[0]))))
+        if token[2]-token[0] >=5: # 너무 짧은 음들은 Onset-focusing 적용안함.
+            if token[1] in keyonset.keys():
+                keyonset[token[1]]+=list(range(token[0],math.ceil(token[0]+0.2*(token[2]-token[0]))))
+            else:
+                keyonset[token[1]]=list(range(token[0],math.ceil(token[0]+0.2*(token[2]-token[0]))))
     keyhandlist = []
     handtypes = ["Left", "Right"]
     halfkeyboarddistance=(keyboard[0][1][0]-keyboard[0][0][0])/2
@@ -181,14 +185,14 @@ def handfingercorresponder(framemidilist, framehandfingerlist, keyboard, tokenli
                                     framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*1  # 1~5
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*1  # 1~5
                             
                             elif keydistance(keyboard, key[0], fingertippositioninfo[j-1])<halfkeyboarddistance:  # 손가락과 frame midi 반 건반 오차 (euclidean distance) (0.5만큼 보정)
                                 fingercount[
                                     framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2 # 1~5
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*(0*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)+1*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2) # 1~5
                         if handpositioninfo[0] == "Right":
                             if (abs(key[0] - handpositioninfo[j]) < 1):  # 손가락과 frame midi 일치
                                 fingercount[
@@ -196,14 +200,14 @@ def handfingercorresponder(framemidilist, framehandfingerlist, keyboard, tokenli
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
                                     + 5
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*1  # 6~10
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*1  # 6~10
                             elif keydistance(keyboard, key[0], fingertippositioninfo[j-1])<halfkeyboarddistance:  # 손가락과 frame midi 반 건반 오차 (euclidean distance) (0.5만큼 보정)
                                 fingercount[
                                     framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
                                     + 5
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2  # 6~10
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*(0*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)+1*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2)  # 6~10
                     handcounter += 1
                 if handpositioninfo[1] == "floating":
                     mindiffhand = handtypes[handtypes.index(handpositioninfo[0]) - 1]

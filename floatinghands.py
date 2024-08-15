@@ -306,7 +306,7 @@ def detectfloatingframes(handlist, frame_count, faultyframes):
             floatingframes.append([metric[0], metric[1]])
 
     #영상 길이가 짧으면 결과가 이상하게 나와서
-    floatingframes=[]
+    #floatingframes=[]
 
     return floatingframes
 

@@ -20,8 +20,8 @@ import stroll    # https://github.com/exeex/midi-visualization with some modific
 
 st.set_page_config(layout="wide")
 
-mididirectory = "./midiconvert/"
-videodirectory = "./videocapture/"
+mididirectory = "./ASDF/midiconvert/"
+videodirectory = "./ASDF/videocapture/"
 
 def delete_smart_tempo(midiname):
     if not "_singletempo.mid" in midiname:
@@ -236,6 +236,7 @@ def sthanddecider(tokenlist, keyhandlist):
             f"Tokennumber:{i},   Tokenpitch={tokenlist[i][1]},    lefthandcounter={len(lhindex)},     righthandcounter={len(rhindex)}, noinfocounter ={noinfocounter}, fingercount={fingerscore}, fingernoinfo={fingerindex[10]}"
         )
         pressedfingers = []
+        highcandidates = []
         totalfingercount = 0
         c = 0
         for j in range(10):
@@ -245,29 +246,40 @@ def sthanddecider(tokenlist, keyhandlist):
 
         while c < len(pressedfingers):
             finger=pressedfingers[c]
-            if finger[1]/totalframe <0.4: # 어떤 손가락이 총 frame의 50프로를 넘지 않으면 후보에서 삭제.
+            if finger[1]/totalframe <0.5: # 어떤 손가락이 총 frame의 50프로를 넘지 않으면 후보에서 삭제.
                 pressedfingers.pop(c)
                 c -= 1
+            if finger[1]/totalframe >0.80: # 어떤 손가락이 총 frame의 80프로를 넘으면 강력한 후보로 선정, 강력한 후보가 하나만 있을 경우 자동으로 그 후보 선택
+                highcandidates.append(finger)
             c += 1
         if c > 1:   # 후보 손가락이 두개 이상일때
-            undecidedtokeninfolist.append([i,tokenlist[i],pressedfingers,totalframe])  #Token number, token info, finger candidate, frame count of the token
-            undecided += 1
+            if len(highcandidates) == 1:
+                pressedfingerlist[i] = highcandidates[0][0]
+                if i <= 149:
+                    if pressedfingerlist[i] == clairdelune_150[i]:
+                        correct += 1
+                    else: print(f"tokennumber: {i}, gt: {clairdelune_150[i]}, pred:{pressedfingerlist[i]}")
+            else:
+                undecidedtokeninfolist.append([i,tokenlist[i],pressedfingers,totalframe])  #Token number, token info, finger candidate, frame count of the token
+                undecided += 1
+                print(f"tokennumber: {i}, undecided")
         elif c == 1:
             pressedfingerlist[i] = pressedfingers[0][0]
             if i <= 149:
-                if pressedfingerlist[i] == chopinwaltz16_150[i]:
+                if pressedfingerlist[i] == clairdelune_150[i]:
                     correct += 1
-                else: print(f"tokennumber: {i}, gt: {chopinwaltz16_150[i]}, pred:{pressedfingerlist[i]}")
+                else: print(f"tokennumber: {i}, gt: {clairdelune_150[i]}, pred:{pressedfingerlist[i]}")
 
         elif c == 0:
             pressedfingerlist[i] = "Noinfo"
             noinfo += 1
+            print(f"tokennumber: {i}, noinfo")
     
         
         if i==149:
             st.write(f'150 Accuracy: {correct/(150-noinfo-undecided)}, 150 noinfo: {noinfo}, 150 undecided: {undecided}')
         if i==len(tokenlist)-1:
-            st.write(f'total noinfo: {noinfo}, total undecided: {undecided}')
+            st.write(f'total tokens: {len(tokenlist)}, total noinfo: {noinfo/len(tokenlist)}, total undecided: {undecided/len(tokenlist)}')
     return pressedfingerlist, undecidedtokeninfolist
 def decider(pressedfingerlist,undecidedtokeninfolist, fps, videoname, newmidiname):
     decision=button_input(undecidedtokeninfolist, fps, videoname, newmidiname)
@@ -302,7 +314,7 @@ def videodata():
 
 def preprocess():
     st.write('delete smart tempo which is automatically recorded by logic')
-    mididirectory = "./midiconvert/"
+    mididirectory = "./ASDF/midiconvert/"
     files = os.listdir(mididirectory)
     newfiles = []
     for file in files:
