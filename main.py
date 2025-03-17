@@ -16,8 +16,8 @@ from stqdm import stqdm
 
 # STEP 2: Create an HandLandmarker object.
 base_options = python.BaseOptions(model_asset_path="./ASDF/hand_landmarker.task")
-min_hand_detection_confidence = 0.8
-min_hand_presence_confidence = 0.7
+min_hand_detection_confidence = 0.85
+min_hand_presence_confidence = 0.8
 min_tracking_confidence = 0.5
 VisionRunningMode = mp.tasks.vision.RunningMode
 
@@ -32,11 +32,15 @@ options = vision.HandLandmarkerOptions(
 detector = vision.HandLandmarker.create_from_options(options)
 
 distortion = 0.001
-keyboard = generatekeyboard(lu=[0.0614, 1 - 0.6750],ru=[0.9593, 1 - 0.6824],ld=[0.0614, 1 - 0.4796],rd=[0.9593, 1 - 0.4796],blackratio=0.65,distortion=distortion)  # miditest
-# keyboard=generatekeyboard(lu=[0.0651,0.4287],ru=[0.9380, 0.4148],ld=[0.0661,0.6],rd=[0.9380,0.5916], blackratio=0.65, distortion=distortion)  #Handcrossing3
-# keyboard=generatekeyboard(lu=[0.0557,1-0.359],ru=[1-193/1920, 1-385/1080],ld=[0.0505,1-0.207],rd=[1-185/1920,1-218/1080], blackratio=0.5, distortion=distortion) #sonatinetest
-# keyboard=generatekeyboard(lu=[100/1920,1-538/1080],ru=[1-159/1920, 1-538/1080],ld=[100/1920,1-361/1080],rd=[1-154/1920,1-358/1080], blackratio=0.56, distortion=distortion) #BWV846
-# keyboard=generatekeyboard(lu=[0,516/1080],ru=[1, 516/1080],ld=[0,755/1080],rd=[1,755/1080], blackratio=0.66, distortion=distortion) #Rousseau
+# keyboard = generatekeyboard(lu=[117/1920, 355/1080],ru=[1-78/1920, 342/1080],ld=[117/1920, 1 - 513/1080],rd=[0.9593, 560/1080],blackratio=0.65,cdistortion=0, ldistortion=distortion, rdistortion=0.3*distortion)  # chopin waltz
+# keyboard = generatekeyboard(lu=[0.0614, 1 - 0.6750],ru=[0.9593, 1 - 0.6824],ld=[0.0614, 1 - 0.4796],rd=[1-77/1920, 1 - 0.4796],blackratio=0.65,distortion=distortion)  # miditest
+# keyboard = generatekeyboard(lu=[0.0651,0.4287],ru=[0.9380, 0.4148],ld=[0.0661,0.6],rd=[0.9380,0.5916], blackratio=0.65, distortion=distortion)  #Handcrossing3
+# keyboard = generatekeyboard(lu=[0.0557,1-0.359],ru=[1-193/1920, 1-385/1080],ld=[0.0505,1-0.207],rd=[1-185/1920,1-218/1080], blackratio=0.5, distortion=distortion) #sonatinetest
+# keyboard = generatekeyboard(lu=[100/1920,1-538/1080],ru=[1-159/1920, 1-538/1080],ld=[100/1920,1-361/1080],rd=[1-154/1920,1-358/1080], blackratio=0.56, distortion=distortion) #BWV846
+# keyboard = generatekeyboard(lu=[0,516/1080],ru=[1, 516/1080],ld=[0,755/1080],rd=[1,755/1080], blackratio=0.66, distortion=distortion) #Rousseau
+# keyboard = generatekeyboard(lu=[94/1920, 459/1080], ru=[1-148/1920, 449/1080], ld=[95/1920,644/1080], rd=[1-149/1920,634/1080], blackratio=0.65, distortion=distortion) #Schumann fantasie
+# keyboard = generatekeyboard(lu=[122/1920, 454/1080], ru=[1-120/1920, 439/1080], ld=[125/1920,634/1080], rd=[1-119/1920,625/1080], blackratio=0.55, distortion=0.003) #Kapustin Sonata 2
+
 filepath = "./ASDF/videocapture/"
 videoname = "BWV846"+ ".mp4"
 midiname = videoname
@@ -62,7 +66,23 @@ def datagenerate(videoname):
     )
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_rate = video.get(cv2.CAP_PROP_FPS)
-
+    with open(
+        "./ASDF/"
+        + "keyboardcoordinateinfo"
+        + ".pkl",
+        "rb",
+    ) as f:
+        keyboardcoordinateinfo = pickle.load(f)
+    keyboard = generatekeyboard(
+        lu=keyboardcoordinateinfo[videoname[:-4]][0],
+        ru=keyboardcoordinateinfo[videoname[:-4]][1],
+        ld=keyboardcoordinateinfo[videoname[:-4]][2],
+        rd=keyboardcoordinateinfo[videoname[:-4]][3],
+        blackratio=keyboardcoordinateinfo[videoname[:-4]][4],
+        ldistortion=keyboardcoordinateinfo[videoname[:-4]][5],
+        rdistortion=keyboardcoordinateinfo[videoname[:-4]][6],
+        cdistortion=keyboardcoordinateinfo[videoname[:-4]][7],
+    )
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 

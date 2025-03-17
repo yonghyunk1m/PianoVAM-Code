@@ -1,6 +1,7 @@
 # ASDF: Automated System for Detecting Fingering
 import streamlit as st
 import sys, os
+import mediapipe as mp
 from midicomparison import *
 from fingergt import *
 from main import (
@@ -8,15 +9,15 @@ from main import (
     min_hand_detection_confidence,
     min_hand_presence_confidence,
     min_tracking_confidence,
-    keyboard,
     datagenerate,
 )
+from streamlit_image_coordinates import streamlit_image_coordinates
 import mido
 import pickle
 import pretty_midi
 import cv2
 import stroll    # https://github.com/exeex/midi-visualization with some modifications in order to use in streamlit environment
-
+import dill
 
 st.set_page_config(layout="wide")
 
@@ -256,9 +257,9 @@ def sthanddecider(tokenlist, keyhandlist):
             if len(highcandidates) == 1:
                 pressedfingerlist[i] = highcandidates[0][0]
                 if i <= 149:
-                    if pressedfingerlist[i] == clairdelune_150[i]:
+                    if pressedfingerlist[i] == chopinwaltz16_150[i]:
                         correct += 1
-                    else: print(f"tokennumber: {i}, gt: {clairdelune_150[i]}, pred:{pressedfingerlist[i]}")
+                    else: print(f"tokennumber: {i}, gt: {chopinwaltz16_150[i]}, pred:{pressedfingerlist[i]}")
             else:
                 undecidedtokeninfolist.append([i,tokenlist[i],pressedfingers,totalframe])  #Token number, token info, finger candidate, frame count of the token
                 undecided += 1
@@ -266,9 +267,9 @@ def sthanddecider(tokenlist, keyhandlist):
         elif c == 1:
             pressedfingerlist[i] = pressedfingers[0][0]
             if i <= 149:
-                if pressedfingerlist[i] == clairdelune_150[i]:
+                if pressedfingerlist[i] == chopinwaltz16_150[i]:
                     correct += 1
-                else: print(f"tokennumber: {i}, gt: {clairdelune_150[i]}, pred:{pressedfingerlist[i]}")
+                else: print(f"tokennumber: {i}, gt: {chopinwaltz16_150[i]}, pred:{pressedfingerlist[i]}")
 
         elif c == 0:
             pressedfingerlist[i] = "Noinfo"
@@ -389,7 +390,24 @@ def prefinger():
             "rb",
         ) as f:
             handlist = pickle.load(f)
-
+        
+        with open(
+            "./ASDF/"
+            + "keyboardcoordinateinfo"
+            + ".pkl",
+            "rb",
+        ) as f:
+            keyboardcoordinateinfo = pickle.load(f)
+        keyboard = generatekeyboard(
+            lu=keyboardcoordinateinfo[videoname[:-4]][0],
+            ru=keyboardcoordinateinfo[videoname[:-4]][1],
+            ld=keyboardcoordinateinfo[videoname[:-4]][2],
+            rd=keyboardcoordinateinfo[videoname[:-4]][3],
+            blackratio=keyboardcoordinateinfo[videoname[:-4]][4],
+            ldistortion=keyboardcoordinateinfo[videoname[:-4]][5],
+            rdistortion=keyboardcoordinateinfo[videoname[:-4]][6],
+            cdistortion=keyboardcoordinateinfo[videoname[:-4]][7],
+        )
         handfingerpositionlist = []
         for handsinfo in handlist:
             handfingerposition = handpositiondetector(
@@ -429,9 +447,187 @@ def prefinger():
             pickle.dump(undecidedfingerlist, f)
         st.write("Prefinger info saved")
 
+def keyboardcoordinate():
+    st.sidebar.success("Select the menu above.")
+    files = os.listdir(filepath)
+    newfiles = []
+    for file in files:
+        if ".mp4" in file:
+            newfiles.append(file)
 
+    selected_option = st.selectbox(
+        "Select video files:",
+        newfiles,
+    )
+
+    video = cv2.VideoCapture(filepath + selected_option)
+    ret, image = video.read()
+    cv2.imwrite("tmp.jpg", image)
+    value = streamlit_image_coordinates(
+        "tmp.jpg",
+        key="local4",
+        use_column_width="always",
+        click_and_drag=True,
+    )
+    st.write("Click the image of leftupper, leftunder, rightupper, and rightunder side of the keyboard and click the button.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("leftupper"):
+            lu=[value["x1"]/value['width'],value['y1']/value['height']]
+            with open(
+                    "./ASDF/lu.pkl",
+                    "wb",
+                ) as f:
+                    pickle.dump(lu, f)
+        if st.button("leftunder"):
+            ld=[value["x1"]/value['width'],value['y1']/value['height']]
+            with open(
+                    "./ASDF/ld.pkl",
+                    "wb",
+                ) as f:
+                    pickle.dump(ld, f)
+    with col2:
+        if st.button("rightupper"):
+            ru=[value["x1"]/value['width'],value['y1']/value['height']]
+            with open(
+                    "./ASDF/ru.pkl",
+                    "wb",
+                ) as f:
+                    pickle.dump(ru, f)
+        if st.button("rightunder"):
+            rd=[value["x1"]/value['width'],value['y1']/value['height']]
+            with open(
+                    "./ASDF/rd.pkl",
+                    "wb",
+                ) as f:
+                    pickle.dump(rd, f)
+    if st.button("Complete"):
+        with open(
+                "./ASDF/lu.pkl",
+                "rb",
+            ) as f:
+            lu=pickle.load(f)
+        with open(
+                "./ASDF/ld.pkl",
+                "rb",
+            ) as f:
+            ld=pickle.load(f)
+        with open(
+                "./ASDF/ru.pkl",
+                "rb",
+            ) as f:
+            ru=pickle.load(f)
+        with open(
+                "./ASDF/rd.pkl",
+                "rb",
+            ) as f:
+            rd=pickle.load(f)
+        if not "keyboardcoordinateinfo.pkl" in os.listdir("./ASDF"):
+            with open(
+                    "./ASDF/"
+                    "keyboardcoordinateinfo"
+                    + ".pkl",
+                    "wb",
+                ) as f:
+                    keyboardcoordinateinfo={"Status":"Generated"}
+                    pickle.dump(keyboardcoordinateinfo, f)
+        with open(
+                "./ASDF/"
+                "keyboardcoordinateinfo"
+                + ".pkl",
+                "rb",
+            ) as f:
+                keyboardcoordinateinfo = pickle.load(f)
+                keyboardcoordinateinfo[selected_option[:-4]]=[lu,ru,ld,rd,0.5,0.0,0.0,0.0]
+                print(keyboardcoordinateinfo)
+        with open(
+                "./ASDF/"
+                "keyboardcoordinateinfo"
+                + ".pkl",
+                "wb",
+            ) as f:
+                print(keyboardcoordinateinfo)
+                pickle.dump(keyboardcoordinateinfo, f, pickle.HIGHEST_PROTOCOL)
+
+    if value: st.write(value["x1"], value["y1"])
             
-    
+def keyboarddistortion():
+
+    st.sidebar.success("Select the menu above.")
+    st.write('make mediapipe data from video')
+    files = os.listdir(filepath)
+    newfiles = []
+    for file in files:
+        if ".mp4" in file:
+            newfiles.append(file)
+
+    selected_option = st.selectbox(
+        "Select video files:",
+        newfiles,
+    )
+
+
+
+    with open(
+            "./ASDF/"
+            + "keyboardcoordinateinfo"
+            + ".pkl",
+            "rb",
+        ) as f:
+            keyboardcoordinateinfo = pickle.load(f)
+    if "blackratio" not in st.session_state:
+        st.session_state["blackratio"] = keyboardcoordinateinfo[selected_option[:-4]][4]
+    if "ldistortion" not in st.session_state:
+        st.session_state["ldistortion"] = keyboardcoordinateinfo[selected_option[:-4]][5]
+    if "rdistortion" not in st.session_state:
+        st.session_state["rdistortion"] = keyboardcoordinateinfo[selected_option[:-4]][6]
+    if "cdistortion" not in st.session_state:
+        st.session_state["cdistortion"] = keyboardcoordinateinfo[selected_option[:-4]][7]
+
+    video = cv2.VideoCapture(filepath + selected_option)
+    ret, image = video.read()
+    img_np = np.array(image)
+    img = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
+    keyboard=generatekeyboard(
+        lu = keyboardcoordinateinfo[selected_option[:-4]][0],
+        ru = keyboardcoordinateinfo[selected_option[:-4]][1],
+        ld = keyboardcoordinateinfo[selected_option[:-4]][2],
+        rd = keyboardcoordinateinfo[selected_option[:-4]][3],
+        blackratio = st.session_state["blackratio"],
+        ldistortion = st.session_state["ldistortion"],
+        rdistortion = st.session_state["rdistortion"],
+        cdistortion = st.session_state["cdistortion"],
+        
+    )
+    keyboard_image = cv2.cvtColor(draw_keyboard_on_image(img.numpy_view(), keyboard), cv2.COLOR_BGR2RGB)
+    col1, col2=st.columns(2)
+    with col1:
+        st.image(keyboard_image)
+    with col2:
+        st.session_state["blackratio"]= st.slider("What is ratio of length of black keys and white keys?", 0.0, 1.0, st.session_state["blackratio"],step=0.05)
+        st.session_state["cdistortion"]= st.slider("At the point between E4 and F4, how much the virtual keyboard differs from originial point?", -0.3, 0.3, st.session_state["cdistortion"]*50)/50
+        st.session_state["ldistortion"]= st.slider("How distorted is the left side of image?", -0.3, 0.3, st.session_state["ldistortion"]*2000)/2000
+        st.session_state["rdistortion"]= st.slider("How distorted is the right side of image?", -0.3, 0.3, st.session_state["rdistortion"]*2000)/2000
+    if st.button("Save keyboard"):
+        with open(
+                "./ASDF/"
+                "keyboardcoordinateinfo"
+                + ".pkl",
+                "wb",
+            ) as f:
+                keyboardcoordinateinfo[selected_option[:-4]]=[
+                    keyboardcoordinateinfo[selected_option[:-4]][0],
+                    keyboardcoordinateinfo[selected_option[:-4]][1],
+                    keyboardcoordinateinfo[selected_option[:-4]][2],
+                    keyboardcoordinateinfo[selected_option[:-4]][3],
+                    st.session_state["blackratio"],
+                    st.session_state["ldistortion"],
+                    st.session_state["rdistortion"],
+                    st.session_state["cdistortion"]
+                ]
+                pickle.dump(keyboardcoordinateinfo, f, pickle.HIGHEST_PROTOCOL) #lu, ru, ld, rd, blackratio, ldstortion, rdistortion, cdistortion
+    if st.button("Reload image"):
+        st.rerun()
 
 
 def label():
@@ -659,7 +855,7 @@ def annotate():
         if st.button("Complete"):
             responses = complete()
             st.write(f"Responses: {responses}")
-            file=open(f'{newmidiname[:-16]}.txt', 'a')   #_singletempo.mid
+            file=open(f'./ASDF/{newmidiname[:-16]}.txt', 'a')   #_singletempo.mid
             for response in responses:
                 w=file.write(f'{response}, ')
             file.close()
@@ -686,7 +882,9 @@ page_names_to_funcs = {
     "Generate mediapipe data" : videodata, 
     "Pre-finger labeling": prefinger,   
     "Label": label,
-    "Groundtruth annotation": annotate
+    "Groundtruth annotation": annotate,
+    "Keyboard detection": keyboardcoordinate,
+    "Keyboard distortion": keyboarddistortion
 }
 
 demo_name = st.sidebar.selectbox("**MENU** 🍽️", page_names_to_funcs.keys())

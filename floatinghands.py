@@ -158,7 +158,6 @@ class distanceclass:
 def landmarkdistance(landmarka, landmarkb):
     return ((landmarka.x - landmarkb.x) ** 2 + (landmarka.y - landmarkb.y) ** 2) ** 0.5
 
-
 def avgcalc(handlist):
     handdistancelist = []
 
@@ -188,15 +187,15 @@ def avgcalc(handlist):
 
     avg = avg / avgcounter
 
-    lowavg = 0
+    """lowavg = 0
     lowavgcounter = 0
     for i in handdistancelist:
         for hand in i:
             if hand.distancesum <= avg:
                 lowavg += hand.distancesum
                 lowavgcounter += 1
-    lowavg = lowavg / lowavgcounter
-    return handdistancelist, lowavg
+    lowavg = lowavg / lowavgcounter"""
+    return handdistancelist
 
 
 def faultyframes(handlist):
@@ -215,7 +214,7 @@ def faultyframes(handlist):
 
 
 def mymetric(
-    handdistancelist, lowavg, handtype, frame, frame_count, a, b, c, faultyframes
+    handdistancelist, handtype, frame, frame_count, a, b, c, faultyframes
 ):
     framerange = [*range(int(max(0, frame - a)), int(min(frame + b, frame_count)))]
     l = len(framerange)
@@ -259,7 +258,7 @@ def mymetric(
                             value += thehand.distancesum * (b + frame - leftframe) / b
 
     value = value / l
-    return ((c * thehand.distancesum) + (1 - c) * value) - 0.3 * lowavg
+    return ((c * thehand.distancesum) + (1 - c) * value)
 
 def detectfloatingframes(handlist, frame_count, faultyframes):
     metriclist = []
@@ -301,7 +300,8 @@ def detectfloatingframes(handlist, frame_count, faultyframes):
             bighandcounter += 1
     for metric in metriclist:
         if (
-            metric[2] > metricavg * (1.3 - 1.3 * bighandcounter / len(metriclist))
+#            metric[2] > metricavg * (1.4 - 1.2 * bighandcounter / len(metriclist))
+             metric[2] > 1.3*median(matriclist)
         ):  # Differs from how many and how intensive of floating occurs in the whole playing
             floatingframes.append([metric[0], metric[1]])
 
@@ -311,23 +311,21 @@ def detectfloatingframes(handlist, frame_count, faultyframes):
     return floatingframes
 
 
-def distortioncoefficient(i, distortion):
-    if i < 26:
-        return distortion * (i - 26) / abs(i - 26) * (-((abs(i - 26) - 13) ** 2) + 169)
-    elif i == 26:
-        return 0
+def distortioncoefficient(i, ldistortion, rdistortion, cdistortion):
+    value=0
     if i > 26:
-        return (
-            0.3
-            * distortion
-            * (i - 26)
-            / abs(i - 26)
-            * (-((abs(i - 26) - 13) ** 2) + 169)
-        )  ## Fits in our (MACLAB@KAIST) recording environment.
+        value = rdistortion * (i - 26) / abs(i - 26) * (-((abs(i - 26) - 13) ** 2) + 169) + cdistortion * (26**2-(i-26)**2) / 26**2 
+    elif i < 26:
+        value = ldistortion * (i - 26) / abs(i - 26) * (-((abs(i - 26) - 13) ** 2) + 169) + cdistortion * (26**2-(i-26)**2) / 26**2
+    elif i == 26:
+        value = cdistortion
+    return value
+
+    ## Fits in our (MACLAB@KAIST) recording environment.
 
 
 def generatekeyboard(
-    lu, ru, ld, rd, blackratio, distortion=0,
+    lu, ru, ld, rd, blackratio, ldistortion=0, rdistortion=0, cdistortion=0,
 ):  # 05/12 update: 검은 건반을 가운데가 아니라 실제 건반에 맞게 위치 조정
     # 05/14 update: 카메라 각도에 맞게 검은 건반 위치 미세 조정
     # 07/02 update: x축 distortion 보정
@@ -336,18 +334,20 @@ def generatekeyboard(
 
     bottompoints = [
         [
-            ld[0] * (52 - i + distortioncoefficient(i, distortion)) / 52
-            + rd[0] * (i + distortioncoefficient(i, distortion)) / 52,
-            ld[1] * (52 - i) / 52 + rd[1] * i / 52,
+            ld[0] * (52 - i) / 52
+            + rd[0] * (i) / 52
+            + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
+            ld[1] * (52 - i) / 52 + rd[1] * i / 52+0.01,
         ]
         for i in range(53)
     ]
 
     toppoints = [
         [
-            lu[0] * (52 - i + distortioncoefficient(i, distortion)) / 52
-            + ru[0] * (i + distortioncoefficient(i, distortion)) / 52,
-            lu[1] * (52 - i) / 52 + ru[1] * i / 52,
+            lu[0] * (52 - i) / 52
+            + ru[0] * (i) / 52
+            + distortioncoefficient(52 - i, ldistortion, rdistortion, cdistortion),
+            lu[1] * (52 - i) / 52 + ru[1] * i / 52-0.01,
         ]
         for i in range(53)
     ]
@@ -355,54 +355,60 @@ def generatekeyboard(
     topblackpoints = [
         [
             [
-                lu[0] * (52 - i + 1 / 4 + distortioncoefficient(i, distortion)) / 52
-                + ru[0] * (i - 1 / 4 + distortioncoefficient(i, distortion)) / 52,
-                lu[1] * (52 - i + 1 / 4) / 52 + ru[1] * (i - 1 / 4) / 52,
+                lu[0] * (52 - i + 1 / 4 ) / 52
+                + ru[0] * (i - 1 / 4 ) / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
+                lu[1] * (52 - i + 1 / 4) / 52 + ru[1] * (i - 1 / 4) / 52-0.01,
             ],
             [
-                lu[0] * (52 - i - 1 / 4 + distortioncoefficient(i, distortion)) / 52
-                + ru[0] * (i + 1 / 4 + distortioncoefficient(i, distortion)) / 52,
-                lu[1] * (52 - i - 1 / 4) / 52 + ru[1] * (i + 1 / 4) / 52,
+                lu[0] * (52 - i - 1 / 4) / 52
+                + ru[0] * (i + 1 / 4) / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
+                lu[1] * (52 - i - 1 / 4) / 52 + ru[1] * (i + 1 / 4) / 52-0.01,
             ],
             [
                 lu[0]
-                * (52 - i + 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i + 1 / 4 + 1 / 12)
                 / 52
                 + ru[0]
-                * (i - 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i - 1 / 4 - 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 lu[1] * (52 - i + 1 / 4 + 1 / 12) / 52
-                + ru[1] * (i - 1 / 4 - 1 / 12) / 52,
+                + ru[1] * (i - 1 / 4 - 1 / 12) / 52-0.01,
             ],
             [
                 lu[0]
-                * (52 - i - 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i - 1 / 4 + 1 / 12)
                 / 52
                 + ru[0]
-                * (i + 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i + 1 / 4 - 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 lu[1] * (52 - i - 1 / 4 + 1 / 12) / 52
-                + ru[1] * (i + 1 / 4 - 1 / 12) / 52,
+                + ru[1] * (i + 1 / 4 - 1 / 12) / 52-0.01,
             ],
             [
                 lu[0]
-                * (52 - i + 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i + 1 / 4 - 1 / 12)
                 / 52
                 + ru[0]
-                * (i - 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i - 1 / 4 + 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 lu[1] * (52 - i + 1 / 4 - 1 / 12) / 52
-                + ru[1] * (i - 1 / 4 + 1 / 12) / 52,
+                + ru[1] * (i - 1 / 4 + 1 / 12) / 52-0.01,
             ],
             [
                 lu[0]
-                * (52 - i - 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i - 1 / 4 - 1 / 12)
                 / 52
                 + ru[0]
-                * (i + 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i + 1 / 4 + 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 lu[1] * (52 - i - 1 / 4 - 1 / 12) / 52
-                + ru[1] * (i + 1 / 4 + 1 / 12) / 52,
+                + ru[1] * (i + 1 / 4 + 1 / 12) / 52-0.01,
             ],
         ]
         for i in idx_black
@@ -411,22 +417,25 @@ def generatekeyboard(
     bottomblackpoints = [
         [
             [
-                lu[0] * (52 - i + 1 / 4 + distortioncoefficient(i, distortion)) / 52
-                + ru[0] * (i - 1 / 4 + distortioncoefficient(i, distortion)) / 52,
+                lu[0] * (52 - i + 1 / 4) / 52
+                + ru[0] * (i - 1 / 4) / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 (lu[1] * (52 - i + 1 / 4) / 52 + ru[1] * (i - 1 / 4) / 52)
                 * (1 - blackratio)
                 + (ld[1] * (52 - i + 1 / 4) / 52 + rd[1] * (i - 1 / 4) / 52)
                 * blackratio,
             ],
             [
-                lu[0] * (52 - i + distortioncoefficient(i, distortion)) / 52
-                + ru[0] * (i + distortioncoefficient(i, distortion)) / 52,
+                lu[0] * (52 - i) / 52
+                + ru[0] * (i) / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 (lu[1] * (52 - i) / 52 + ru[1] * (i) / 52) * (1 - blackratio)
                 + (ld[1] * (52 - i) / 52 + rd[1] * (i) / 52) * blackratio,
             ],
             [
-                lu[0] * (52 - i - 1 / 4 + distortioncoefficient(i, distortion)) / 52
-                + ru[0] * (i + 1 / 4 + distortioncoefficient(i, distortion)) / 52,
+                lu[0] * (52 - i - 1 / 4) / 52
+                + ru[0] * (i + 1 / 4) / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 (lu[1] * (52 - i - 1 / 4) / 52 + ru[1] * (i + 1 / 4) / 52)
                 * (1 - blackratio)
                 + (ld[1] * (52 - i - 1 / 4) / 52 + rd[1] * (i + 1 / 4) / 52)
@@ -434,11 +443,12 @@ def generatekeyboard(
             ],
             [
                 lu[0]
-                * (52 - i + 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i + 1 / 4 + 1 / 12)
                 / 52
                 + ru[0]
-                * (i - 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i - 1 / 4 - 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 (
                     lu[1] * (52 - i + 1 / 4 + 1 / 12) / 52
                     + ru[1] * (i - 1 / 4 - 1 / 12) / 52
@@ -452,11 +462,12 @@ def generatekeyboard(
             ],
             [
                 lu[0]
-                * (52 - i - 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i - 1 / 4 + 1 / 12)
                 / 52
                 + ru[0]
-                * (i + 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i + 1 / 4 - 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 (
                     lu[1] * (52 - i - 1 / 4 + 1 / 12) / 52
                     + ru[1] * (i + 1 / 4 - 1 / 12) / 52
@@ -470,11 +481,12 @@ def generatekeyboard(
             ],
             [
                 lu[0]
-                * (52 - i + 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i + 1 / 4 - 1 / 12)
                 / 52
                 + ru[0]
-                * (i - 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i - 1 / 4 + 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 (
                     lu[1] * (52 - i + 1 / 4 - 1 / 12) / 52
                     + ru[1] * (i - 1 / 4 + 1 / 12) / 52
@@ -488,11 +500,12 @@ def generatekeyboard(
             ],
             [
                 lu[0]
-                * (52 - i - 1 / 4 - 1 / 12 + distortioncoefficient(i, distortion))
+                * (52 - i - 1 / 4 - 1 / 12)
                 / 52
                 + ru[0]
-                * (i + 1 / 4 + 1 / 12 + distortioncoefficient(i, distortion))
-                / 52,
+                * (i + 1 / 4 + 1 / 12)
+                / 52
+                + distortioncoefficient(i, ldistortion, rdistortion, cdistortion),
                 (
                     lu[1] * (52 - i - 1 / 4 - 1 / 12) / 52
                     + ru[1] * (i + 1 / 4 + 1 / 12) / 52
