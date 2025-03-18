@@ -53,11 +53,11 @@ def train(logdir, device, iterations, resume_iteration, checkpoint_interval, tra
     for i, batch in zip(loop, cycle(loader)):
         
         predictions, losses = model.run_on_batch(batch)
-        train_loss = sum(losses.values()) / accumulation_steps # Scale loss
+        train_loss = sum(losses.values()) / ACCUMULATION_STEPS # Scale loss
 
         train_loss.backward()  # Accumulate gradients
 
-        if (i + 1) % accumulation_steps == 0:  # Perform update every 4 steps
+        if (i + 1) % ACCUMULATION_STEPS == 0:  # Perform update every 4 steps
             optimizer.step()
             optimizer.zero_grad()
             scheduler.step()
@@ -66,10 +66,10 @@ def train(logdir, device, iterations, resume_iteration, checkpoint_interval, tra
                 clip_grad_norm_(model.parameters(), clip_gradient_norm)
             
             # **WandB Logging after every accumulation step (1 effective step)**
-            wandb.log({"train_loss": train_loss.item() * accumulation_steps}, step= (i + 1) // accumulation_steps)
+            wandb.log({"train_loss": train_loss.item() * ACCUMULATION_STEPS}, step= (i + 1) // ACCUMULATION_STEPS)
 
-            for key, value in {'loss': train_loss * accumulation_steps, **losses}.items():
-                writer.add_scalar(key, value.item(), global_step=i // accumulation_steps)
+            for key, value in {'loss': train_loss * ACCUMULATION_STEPS, **losses}.items():
+                writer.add_scalar(key, value.item(), global_step=i // ACCUMULATION_STEPS)
 
         if (i + 1) % (validation_interval) == 0:
             model.eval()
@@ -94,10 +94,10 @@ def train(logdir, device, iterations, resume_iteration, checkpoint_interval, tra
                         torch.tensor(value).detach().cpu().numpy() if isinstance(value, list) else value.detach().cpu().numpy()
                     )
 
-                    writer.add_scalar(metric_name, avg_value, global_step=i // accumulation_steps)
+                    writer.add_scalar(metric_name, avg_value, global_step=i // ACCUMULATION_STEPS)
                     wandb_log_data[metric_name] = avg_value
 
-                wandb.log(wandb_log_data, step= (i+1) // accumulation_steps)
+                wandb.log(wandb_log_data, step= (i+1) // ACCUMULATION_STEPS)
 
                 # Save the best model checkpoint if validation loss improves
                 if validation_loss < best_validation_loss:
