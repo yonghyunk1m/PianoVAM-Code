@@ -109,20 +109,20 @@ def train(logdir, device, iterations, resume_iteration, checkpoint_interval, tra
                         print(f"🗑 Deleted previous best optimizer {best_optimizer_path}")
 
                     best_validation_loss = validation_loss
-                    best_model_path = os.path.join(logdir, f'{train_on}_{subtasks}',
+                    best_model_path = os.path.join(logdir, f'{train_on}',
                                                 f'best_model-{i+1}step-valLoss{validation_loss:.6f}.pt')
-                    best_optimizer_path = os.path.join(logdir, f'{train_on}_{subtasks}',
+                    best_optimizer_path = os.path.join(logdir, f'{train_on}',
                             f'best_model-{i+1}step-optimizer-state.pt')
                     os.makedirs(os.path.dirname(best_model_path), exist_ok=True)
 
                     torch.save(model, best_model_path)
-                    torch.save(optimizer.state_dict(), os.path.join(logdir, f'{train_on}_{subtasks}', f"best_model-{i+1}step-optimizer-state.pt"))
+                    torch.save(optimizer.state_dict(), os.path.join(logdir, f'{train_on}', f"best_model-{i+1}step-optimizer-state.pt"))
                     print(f"✅ New best validation loss: {best_validation_loss:.6f} | Saved model at {best_model_path}")
                     
             model.train()
 
         if (i + 1) % (checkpoint_interval) == 0:
-            checkpoint_dir = os.path.join(logdir, f'{train_on}_{subtasks}')
+            checkpoint_dir = os.path.join(logdir, f'{train_on}')
             os.makedirs(checkpoint_dir, exist_ok=True)  # 🔹 Create directory if not exists
 
             torch.save(model, os.path.join(checkpoint_dir, f'model-{i+1}.pt'))
