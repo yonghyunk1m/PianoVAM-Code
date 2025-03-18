@@ -100,7 +100,7 @@ def train(logdir, device, iterations, resume_iteration, checkpoint_interval, tra
                 wandb.log(wandb_log_data, step= (i+1) // ACCUMULATION_STEPS)
 
                 # Save the best model checkpoint if validation loss improves
-                if validation_loss < best_validation_loss:
+                if validation_loss is not None and validation_loss < best_validation_loss:
                     if best_model_path is not None and os.path.exists(best_model_path):
                         os.remove(best_model_path)
                         print(f"🗑 Deleted previous best model {best_model_path}")
