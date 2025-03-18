@@ -1,4 +1,4 @@
-# [Source] https://github.com/jongwook/onsets-and-frames/blob/master/evaluate.py
+# [SOURCE] https://github.com/jongwook/onsets-and-frames/blob/master/evaluate.py
 
 import argparse
 import os
@@ -14,18 +14,36 @@ from scipy.stats import hmean
 from tqdm import tqdm
 
 import onsets_and_frames.dataset as dataset_module
-
 from onsets_and_frames import *
-from onsets_and_frames.decoding import extract_notes
+
+import mido
 
 eps = sys.float_info.epsilon
 
+import torch
+import numpy as np
+import random
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+set_seed(42)
 
 def evaluate(data, model, onset_threshold=0.5, frame_threshold=0.5, save_path=None):
     metrics = defaultdict(list)
 
-    for label in data:
+    for idx in tqdm(range(len(data)), desc='Evaluating Data'):
+        label = data[idx]
+        
         pred, losses = model.run_on_batch(label)
+        eval_loss = sum(losses.values())
+        metrics['metric/eval-loss'].append(eval_loss)
 
         for key, loss in losses.items():
             metrics[key].append(loss.item())
@@ -33,11 +51,16 @@ def evaluate(data, model, onset_threshold=0.5, frame_threshold=0.5, save_path=No
         for key, value in pred.items():
             value.squeeze_(0).relu_()
 
-        p_ref, i_ref, v_ref = extract_notes(label['onset'], label['frame'], label['velocity'])
-        p_est, i_est, v_est = extract_notes(pred['onset'], pred['frame'], pred['velocity'], onset_threshold, frame_threshold)
-
-        t_ref, f_ref = notes_to_frames(p_ref, i_ref, label['frame'].shape)
-        t_est, f_est = notes_to_frames(p_est, i_est, pred['frame'].shape)
+        try:
+            p_ref, i_ref, v_ref = extract_notes(label['onset'], label['frame'], label['velocity'])
+            p_est, i_est, v_est = extract_notes(pred['onset'], pred['frame'], pred['velocity'], onset_threshold, frame_threshold)
+            t_ref, f_ref = notes_to_frames(p_ref, i_ref, label['frame'].shape)
+            t_est, f_est = notes_to_frames(p_est, i_est, pred['frame'].shape)
+        except: # VISUAL ONLY
+            p_ref, i_ref, v_ref = extract_notes(label['onset'], label['key_press'], label['velocity'])
+            p_est, i_est, v_est = extract_notes(pred['onset'], pred['key_press'], pred['velocity'], onset_threshold, frame_threshold)
+            t_ref, f_ref = notes_to_frames(p_ref, i_ref, label['key_press'].shape)
+            t_est, f_est = notes_to_frames(p_est, i_est, pred['key_press'].shape)            
 
         scaling = HOP_LENGTH / SAMPLE_RATE
 
@@ -51,6 +74,9 @@ def evaluate(data, model, onset_threshold=0.5, frame_threshold=0.5, save_path=No
         t_est = t_est.astype(np.float64) * scaling
         f_est = [np.array([midi_to_hz(MIN_MIDI + midi) for midi in freqs]) for freqs in f_est]
 
+        # Precision_no_offset, Recall_no_offset, F1_no_offset
+        # precision_recall_f1_overlap() in mir_eval/mir_eval/transcription.py
+        # [Source] https://github.com/mir-evaluation/mir_eval/blob/main/mir_eval/transcription.py
         p, r, f, o = evaluate_notes(i_ref, p_ref, i_est, p_est, offset_ratio=None)
         metrics['metric/note/precision'].append(p)
         metrics['metric/note/recall'].append(r)
@@ -93,25 +119,36 @@ def evaluate(data, model, onset_threshold=0.5, frame_threshold=0.5, save_path=No
 
     return metrics
 
-
 def evaluate_file(model_file, dataset, dataset_group, sequence_length, save_path,
                   onset_threshold, frame_threshold, device):
     dataset_class = getattr(dataset_module, dataset)
-    kwargs = {'sequence_length': sequence_length, 'device': device}
+    
+    kwargs = {'sequence_length': sequence_length, 'device': device, 'path': 'data'}
     if dataset_group is not None:
         kwargs['groups'] = [dataset_group]
     dataset = dataset_class(**kwargs)
 
-    model = torch.load(model_file, map_location=device).eval()
+    model = torch.load(model_file, map_location=torch.device(device))
+
+    model.eval()
+        
     summary(model)
 
-    metrics = evaluate(tqdm(dataset), model, onset_threshold, frame_threshold, save_path)
+    metrics = evaluate(dataset, model, onset_threshold, frame_threshold, save_path)
 
+    print(f"metrics: {metrics}")
+    
     for key, values in metrics.items():
-        if key.startswith('metric/'):
-            _, category, name = key.split('/')
+        parts = key.split('/')
+        if len(parts) == 3:
+            _, category, name = parts
             print(f'{category:>32} {name:25}: {np.mean(values):.3f} ± {np.std(values):.3f}')
+        elif len(parts) == 2:
+            category, name = parts
+            print(f'[{category.upper()}] {name:25}: {np.mean(values):.3f} ± {np.std(values):.3f}')
 
+        else:
+            continue
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
