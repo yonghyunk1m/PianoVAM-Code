@@ -12,6 +12,7 @@ from midicomparison import *
 import pickle
 from tqdm.auto import tqdm
 from stqdm import stqdm
+import time as timemodule
 # Note: file order is main>evaluate>midicomparison>floatinghands
 
 # STEP 2: Create an HandLandmarker object.
@@ -31,7 +32,7 @@ options = vision.HandLandmarkerOptions(
 )
 detector = vision.HandLandmarker.create_from_options(options)
 
-distortion = 0.001
+# distortion = 0.001
 # keyboard = generatekeyboard(lu=[117/1920, 355/1080],ru=[1-78/1920, 342/1080],ld=[117/1920, 1 - 513/1080],rd=[0.9593, 560/1080],blackratio=0.65,cdistortion=0, ldistortion=distortion, rdistortion=0.3*distortion)  # chopin waltz
 # keyboard = generatekeyboard(lu=[0.0614, 1 - 0.6750],ru=[0.9593, 1 - 0.6824],ld=[0.0614, 1 - 0.4796],rd=[1-77/1920, 1 - 0.4796],blackratio=0.65,distortion=distortion)  # miditest
 # keyboard = generatekeyboard(lu=[0.0651,0.4287],ru=[0.9380, 0.4148],ld=[0.0661,0.6],rd=[0.9380,0.5916], blackratio=0.65, distortion=distortion)  #Handcrossing3
@@ -41,29 +42,24 @@ distortion = 0.001
 # keyboard = generatekeyboard(lu=[94/1920, 459/1080], ru=[1-148/1920, 449/1080], ld=[95/1920,644/1080], rd=[1-149/1920,634/1080], blackratio=0.65, distortion=distortion) #Schumann fantasie
 # keyboard = generatekeyboard(lu=[122/1920, 454/1080], ru=[1-120/1920, 439/1080], ld=[125/1920,634/1080], rd=[1-119/1920,625/1080], blackratio=0.55, distortion=0.003) #Kapustin Sonata 2
 
-filepath = "./ASDF/videocapture/"
-videoname = "BWV846"+ ".mp4"
-midiname = videoname
-video = cv2.VideoCapture(filepath + videoname)
-dirname = (
-    filepath
-    + videoname[:-4]
-    + "_"
-    + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
-)
-frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-frame_rate = video.get(cv2.CAP_PROP_FPS)
+filepath = os.path.join(os.path.expanduser('~'),'ASDF','ASDF','videocapture') #Your home directory
 
 def datagenerate(videoname):
-    import time as timemodule
     start = timemodule.time()
-    video = cv2.VideoCapture(filepath + videoname)
-    dirname = (
-        filepath
-        + videoname[:-4]  #.mp4 제거
-        + "_"
-        + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+    video = cv2.VideoCapture(
+        os.path.join(filepath,
+                     videoname,
+        )
     )
+    width = video.get(cv2.CAP_PROP_FRAME_WIDTH)
+    height = video.get(cv2.CAP_PROP_FRAME_HEIGHT)
+
+    ratio=height/width
+    dirname = os.path.join(
+        filepath,
+        videoname[:-4]+'_'+f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}",
+    )
+
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_rate = video.get(cv2.CAP_PROP_FPS)
     with open(
@@ -99,7 +95,7 @@ def datagenerate(videoname):
         for _ in stqdm(range(frame_count), desc="Generating Frame images from video..."):
             if count < frame_count:
                 ret, image = video.read()
-                cv2.imwrite(dirname + "/frame%d.jpg" % count, image)
+                cv2.imwrite(r"{}".format(dirname + "/frame%d.jpg" % count), image)
                 count += 1
                 pbar.update(1)
             del ret, image
@@ -133,6 +129,12 @@ def datagenerate(videoname):
             tempimglist.append(detection_result)
             if len(detection_result.handedness) == 0:
                 nohandframelist.append(frame)
+
+            for j in range(len(detection_result.handedness)):
+                for finger_landmark in detection_result.hand_landmarks[j]:
+                    finger_landmark.x=finger_landmark.x*2-1 #[0,1]->[-1,1]
+                    finger_landmark.y=finger_landmark.y*2-1 #[0,1]->[-1,1]
+
             handsinfo = [
                 handclass(
                     handtype=detection_result.handedness[j][0].category_name,
@@ -140,7 +142,7 @@ def datagenerate(videoname):
                     handframe=frame,
                 )
                 for j in range(len(detection_result.handedness))
-            ]
+            ]                                                               # handclass : ( handtype = "Left" or "Right" / hand_landmarks = (Normalized_landmark(x,y,z,visibiliry,presence)) handframe = frame : int )
             handlist.append(handsinfo)
             handtypelist.append([hand.handtype for hand in handsinfo])
             if frame == max(0, file_count - 100):
@@ -150,10 +152,14 @@ def datagenerate(videoname):
                 )
             pbar2.update(1)
             frame += 1
+
+    lhmodel,rhmodel=modelskeleton(handlist)
+    depthlist(handlist,lhmodel,rhmodel,ratio)
+
     faultyframe = faultyframes(handlist)
     pbar2.close()
     print("Calculating faulty frames...")
-    floatingframes = detectfloatingframes(handlist, frame_count, faultyframe)
+    floatingframes = detectfloatingframes(handlist, frame_count, faultyframe, lhmodel, rhmodel, ratio=ratio)
     with open(
         dirname
         + "/floatingframes_"
@@ -178,7 +184,7 @@ def datagenerate(videoname):
 
     print("Data generated and saved")
     print(
-        f"faulty frames:{len(faultyframe)}, nohand frames:{len(nohandframelist)} floating hands:{len(floatingframes)}/{len(handlist)}"
+        f"faulty frames:{len(faultyframe)}, nohand frames:{len(nohandframelist)}"
     )
     pbar3 = tqdm(total=file_count)
     frame=0

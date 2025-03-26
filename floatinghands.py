@@ -4,13 +4,18 @@ import numpy as np
 import cv2
 import numpy as np
 from stqdm import stqdm
+import math
+from scipy.optimize import fsolve
+from shapely import Polygon
+
 # STEP 1: Import the necessary modules.
 import sys
+sys.set_int_max_str_digits(15000)   # sympy 계산할때 이거 limit에 걸려서 늘려줌
 
 MARGIN = 10  # pixels
 FONT_SIZE = 1
-FONT_THICKNESS = 1
-HANDEDNESS_TEXT_COLOR = (88, 205, 54)  # vibrant green
+FONT_THICKNESS = 2
+HANDEDNESS_TEXT_COLOR = (140, 171, 138)  # pastel green
 
 
 def draw_landmarks_on_image(rgb_image, detection_result):
@@ -67,24 +72,28 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 def draw_landmarks_and_floatedness_on_image(
     rgb_image, detection_result, frame, floating_handinfos
 ):
+    # 감성적 스타일 커스텀 설
+    CUSTOM_LANDMARK_STYLE = solutions.drawing_utils.DrawingSpec(color=(255, 182, 193), thickness=6, circle_radius=5)  # 파스텔핑
+    CUSTOM_CONNECTION_STYLE = solutions.drawing_utils.DrawingSpec(color=(135, 206, 235), thickness=3)  # 스카이블루
     hand_landmarks_list = detection_result.hand_landmarks
     handedness_list = detection_result.handedness
     annotated_image = np.copy(rgb_image)
+    depth=1
+    floatedness=''
     # Loop through the detected hands to visualize.
     for idx in range(len(hand_landmarks_list)):
         hand_landmarks = hand_landmarks_list[idx]
         handedness = handedness_list[idx]
-        if [frame, handedness[0].category_name] in floating_handinfos:
-            floatedness = "floating"
-        else:
-            floatedness = "notfloating"
-
+        for hand in floating_handinfos:
+            if hand[:2]==[frame, handedness[0].category_name]:
+                depth=hand[2]
+                floatedness=hand[3]
         # Draw the hand landmarks.
         hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
         hand_landmarks_proto.landmark.extend(
             [
                 landmark_pb2.NormalizedLandmark(
-                    x=landmark.x, y=landmark.y, z=landmark.z
+                    x=(landmark.x+1)/2, y=(landmark.y+1)/2, z=landmark.z
                 )
                 for landmark in hand_landmarks
             ]
@@ -93,21 +102,23 @@ def draw_landmarks_and_floatedness_on_image(
             annotated_image,
             hand_landmarks_proto,
             solutions.hands.HAND_CONNECTIONS,
-            solutions.drawing_styles.get_default_hand_landmarks_style(),
-            solutions.drawing_styles.get_default_hand_connections_style(),
+            landmark_drawing_spec=CUSTOM_LANDMARK_STYLE,
+            connection_drawing_spec=CUSTOM_CONNECTION_STYLE,
         )
 
         # Get the top left corner of the detected hand's bounding box.
         height, width, _ = annotated_image.shape
-        x_coordinates = [landmark.x for landmark in hand_landmarks]
-        y_coordinates = [landmark.y for landmark in hand_landmarks]
+        x_coordinates = [(landmark.x+1)/2 for landmark in hand_landmarks]
+        y_coordinates = [(landmark.y+1)/2 for landmark in hand_landmarks]
         text_x = int(min(x_coordinates) * width)
         text_y = int(min(y_coordinates) * height) - MARGIN
 
         # Draw handedness (left or right hand) on the image.
+        floattext = ""
+        if floatedness=="floating": floattext="Float,"
         cv2.putText(
             annotated_image,
-            f"{handedness[0].category_name},{floatedness}",
+            f"{handedness[0].category_name},{floattext}{round(depth,3)}",
             (text_x, text_y),
             cv2.FONT_HERSHEY_DUPLEX,
             FONT_SIZE,
@@ -146,59 +157,160 @@ class handclass:
         self.handtype = handtype
         self.handlandmark = handlandmark
         self.handframe = handframe
+    
+    def set_handdepth(self, handdepth):
+        self.handdepth = handdepth
+
+    #class handdepthclass:
+        #    def __init__(self, handtype, depthsum, handframe):
+        #        self.handtype = handtype
+        #        self.depthsum = depthsum
+#        self.handframe = handframe
 
 
-class distanceclass:
-    def __init__(self, handtype, distancesum, handframe):
-        self.handtype = handtype
-        self.distancesum = distancesum
-        self.handframe = handframe
+def landmarkdistance(landmarka, landmarkb, ratio):
+    return ((landmarka.x - landmarkb.x) ** 2 + (landmarka.y*ratio - landmarkb.y*ratio) ** 2) ** 0.5 * 2 # [0,1]이 아니라 [-1,1]의 거리이므로 x2 해줘야됨
 
+def landmarkangle(landmarka, landmarkb, landmarkc):
+    # Vector AB = B - A
+    AB_x = landmarkb.x - landmarka.x
+    AB_y = landmarkb.y - landmarka.y
 
-def landmarkdistance(landmarka, landmarkb):
-    return ((landmarka.x - landmarkb.x) ** 2 + (landmarka.y - landmarkb.y) ** 2) ** 0.5
+    # Vector BC = C - B
+    BC_x = landmarkc.x - landmarkb.x
+    BC_y = landmarkc.y - landmarkb.y
 
-def avgcalc(handlist):
-    handdistancelist = []
+    # Dot product of AB and BC
+    dot_product = AB_x * BC_x + AB_y * BC_y
+
+    # Magnitudes of AB and BC
+    magnitude_AB = math.sqrt(AB_x**2 + AB_y**2)
+    magnitude_BC = math.sqrt(BC_x**2 + BC_y**2)
+
+    # Cosine of the angle
+    cos_theta = dot_product / (magnitude_AB * magnitude_BC)
+
+    # Angle in radians
+    theta_radians = math.acos(cos_theta)
+
+    # Convert radians to degrees
+    theta_degrees = math.degrees(theta_radians)
+
+    area = 0.5 * abs(landmarka.x*(landmarkb.y - landmarkc.y) + landmarkb.x*(landmarkc.y - landmarka.y) + landmarkc.x*(landmarka.y - landmarkb.y))
+
+    return theta_degrees, area
+
+def modelskeleton(handlist):
+    lhangledifflist = [] # Angle of Index finger MCP - Wrist - Ring finger MCP
+    rhangledifflist = []
 
     for handsinfo in handlist:
-        handdistanceinfo = []
         for hand in handsinfo:
-            distancesum = 0
-            for i in [1, 5, 9, 13, 17]:  # OR, for i in range(21):
-                distancesum += landmarkdistance(
-                    hand.handlandmark[0], hand.handlandmark[i]
+            if hand.handtype == "Left":
+                lhangledifflist.append(
+                    [
+                            hand.handtype, 
+                            abs(landmarkangle(hand.handlandmark[5],hand.handlandmark[0],hand.handlandmark[13])[0]-28), # difference of angle between 28 degree (the angle when hand is parallel to the keyboard)
+                            landmarkangle(hand.handlandmark[5],hand.handlandmark[0],hand.handlandmark[13])[1], # WIR triangle area
+                            Polygon(((hand.handlandmark[0].x,hand.handlandmark[0].y),
+                                    (hand.handlandmark[4].x,hand.handlandmark[4].y),
+                                    (hand.handlandmark[8].x,hand.handlandmark[8].y),
+                                    (hand.handlandmark[12].x,hand.handlandmark[12].y),
+                                    (hand.handlandmark[16].x,hand.handlandmark[16].y),
+                                    (hand.handlandmark[20].x,hand.handlandmark[20].y),      
+                            )).area, # area of hexagon of wrist and five fingertips
+                            hand.handlandmark,
+                            hand.handframe
+                    ]
                 )
-                # distancesum += 0.5*landmarkdistance(hand.handlandmark[5],hand.handlandmark[17])
-            handdistanceinfo.append(
-                distanceclass(
-                    handtype=hand.handtype,
-                    distancesum=distancesum,
-                    handframe=hand.handframe,
-                )
-            )
-        handdistancelist.append(handdistanceinfo)
-    avg = 0
-    avgcounter = 0
-    for i in handdistancelist:
-        for hand in i:
-            avg += hand.distancesum
-            avgcounter += 1
+            elif hand.handtype == "Right":
+                 rhangledifflist.append(
+                    [
+                            hand.handtype, 
+                            abs(landmarkangle(hand.handlandmark[5],hand.handlandmark[0],hand.handlandmark[13])[0]-28), 
+                            landmarkangle(hand.handlandmark[5],hand.handlandmark[0],hand.handlandmark[13])[1],
+                            Polygon(((hand.handlandmark[0].x,hand.handlandmark[0].y),
+                                    (hand.handlandmark[4].x,hand.handlandmark[4].y),
+                                    (hand.handlandmark[8].x,hand.handlandmark[8].y),
+                                    (hand.handlandmark[12].x,hand.handlandmark[12].y),
+                                    (hand.handlandmark[16].x,hand.handlandmark[16].y),
+                                    (hand.handlandmark[20].x,hand.handlandmark[20].y),      
+                            )).area, # area of hexagon of wrist and five fingertips
+                            hand.handlandmark,
+                            hand.handframe
+                    ]
+                )               
+    lhatop10=sorted(lhangledifflist, key=lambda x : x[1])[:round(0.1*len(lhangledifflist))]  # top 10 percent of hands whose angle is close to 28 degree (to exclude tilted hand)
+    lhwtop50=sorted(lhatop10, key=lambda x : -x[3]/x[2])[:round(0.5*len(lhatop10))] # top 50 percent of hands by WIR area / whole area (to exclude bended hand)
+    lhmodel=sorted(lhwtop50, key=lambda x : x[2])[int(len(lhwtop50)*0.5)][4] #  median of area (to select hand which is likely on keyboard)
+    print(f"lhmodel={sorted(lhwtop50, key=lambda x : x[2])[int(len(lhwtop50)*0.5)][5]}")
 
-    avg = avg / avgcounter
+    rhatop10=sorted(rhangledifflist, key=lambda x : x[1])[:round(0.1*len(rhangledifflist))]
+    rhwtop50=sorted(rhatop10, key=lambda x : -x[3]/x[2])[:round(0.5*len(rhatop10))]
+    rhmodel=sorted(rhwtop50, key=lambda x : x[2])[int(len(rhwtop50)*0.5)][4]
+    print(f"rhmodel={sorted(rhwtop50, key=lambda x : x[2])[int(len(rhwtop50)*0.5)][5]}") 
+    return lhmodel, rhmodel
+    
+def calcdepth(w,i,r,lhmodel,rhmodel,ratio): #ratio: ratio of the video frame = height/width
 
-    """lowavg = 0
-    lowavgcounter = 0
-    for i in handdistancelist:
-        for hand in i:
-            if hand.distancesum <= avg:
-                lowavg += hand.distancesum
-                lowavgcounter += 1
-    lowavg = lowavg / lowavgcounter"""
-    return handdistancelist
+    initial_guess=[1,1,1]
+    solution = fsolve(system, initial_guess, args=(w,i,r,lhmodel,rhmodel,ratio))
+    
+    t, u, v = solution
+    return (t+u+v)/3
 
 
-def faultyframes(handlist):
+def system(vars,w,i,r,lhmodel, rhmodel, ratio):
+    t, u, v = vars
+    eq1=(t*w[0]-u*i[0])**2+(t*w[1]-u*i[1])**2+(t-u)**2 - landmarkdistance(lhmodel[0],lhmodel[5],ratio)**2
+    eq2=(u*i[0]-v*r[0])**2+(u*i[1]-v*r[1])**2+(u-v)**2 - landmarkdistance(lhmodel[5],lhmodel[13],ratio)**2
+    eq3=(v*r[0]-t*w[0])**2+(v*r[1]-t*w[1])**2+(v-t)**2 - landmarkdistance(lhmodel[13],lhmodel[0],ratio)**2
+
+    return [eq1, eq2, eq3]
+
+
+
+    #def avgcalc(handlist, ratio):
+    #    handdistancelist = []
+    #
+    #    for handsinfo in handlist:
+    #        handdistanceinfo = []
+    #        for hand in handsinfo:
+    #            distancesum = 0
+    #            for i in [1, 5, 9, 13, 17]:  # OR, for i in range(21):
+    #                distancesum += landmarkdistance(
+    #                    hand.handlandmark[0], hand.handlandmark[i], ratio
+    #                )
+    #                # distancesum += 0.5*landmarkdistance(hand.handlandmark[5],hand.handlandmark[17])
+    #            handdistanceinfo.append(
+    #                distanceclass(
+    #                    handtype=hand.handtype,
+    #                    distancesum=distancesum,
+    #                    handframe=hand.handframe,
+    #                )
+    #            )
+    #        handdistancelist.append(handdistanceinfo)
+    #    avg = 0
+    #    avgcounter = 0
+    #    for i in handdistancelist:
+    #        for hand in i:
+    #            avg += hand.distancesum
+    #            avgcounter += 1
+    #
+    #    avg = avg / avgcounter
+    #
+    #    """lowavg = 0
+    #    lowavgcounter = 0
+    #    for i in handdistancelist:
+    #        for hand in i:
+    #            if hand.distancesum <= avg:
+    #                lowavg += hand.distancesum
+    #                lowavgcounter += 1
+    #    lowavg = lowavg / lowavgcounter"""
+#    return handdistancelist
+
+
+def faultyframes(handlist):  # 손 3개 or 같은손 2개 등 
     faultyframes = []
     for handsinfo in handlist:
         if len(handsinfo) >= 3:
@@ -212,19 +324,32 @@ def faultyframes(handlist):
 
     return faultyframes
 
+def depthlist(handlist,lhmodel,rhmodel,ratio):
+    for hands in handlist:
+        for hand in hands:
+            depth=calcdepth(
+                    [hand.handlandmark[0].x, hand.handlandmark[0].y],
+                    [hand.handlandmark[5].x, hand.handlandmark[5].y],
+                    [hand.handlandmark[13].x, hand.handlandmark[13].y],
+                    lhmodel,
+                    rhmodel,
+                    ratio
+            )
+            hand.set_handdepth(depth)
 
 def mymetric(
-    handdistancelist, handtype, frame, frame_count, a, b, c, faultyframes
+    handlist, handtype, frame, frame_count, a, c, faultyframes, lhmodel, rhmodel, ratio
 ):
-    framerange = [*range(int(max(0, frame - a)), int(min(frame + b, frame_count)))]
+    framerange = [*range(int(max(0, frame - a)), int(min(frame + a, frame_count)))]
     l = len(framerange)
     tempframes = []
     availableframes = []
     templist = []
     thehand = None
     value = 0
-    for handdistanceinfo in handdistancelist:
-        for hand in handdistanceinfo:
+    counter=0
+    for hands in handlist:
+        for hand in hands:
             if hand.handframe in framerange:
                 if hand.handtype == handtype:
                     tempframes.append(hand.handframe)
@@ -234,38 +359,50 @@ def mymetric(
     for frames in tempframes:
         if frames not in faultyframes:
             availableframes.append(frames)
-
-    for handdistanceinfo in handdistancelist:
-        for hand in handdistanceinfo:
+    
+    thehanddepth=calcdepth(
+        [thehand.handlandmark[0].x, thehand.handlandmark[0].y],
+        [thehand.handlandmark[5].x, thehand.handlandmark[5].y],
+        [thehand.handlandmark[13].x, thehand.handlandmark[13].y],
+        lhmodel,
+        rhmodel,
+        ratio
+    )
+    for hands in handlist:
+        for hand in hands:
             templist = [
-                *range(int(max(0, frame - a)), int(min(frame + b, frame_count)))
+                *range(int(max(0, frame - a)), int(min(frame + a, frame_count)))
             ]
             if (
                 hand.handframe in framerange
             ):  ## 여기의 hand들은 전부 framerange 안에 있음.
+                depth=hand.handdepth
                 if hand.handtype == handtype:
                     for availableframe in availableframes:
                         if availableframe < frame:
-                            value += hand.distancesum * (a - frame + availableframe) / a
+                            value += depth * (a - frame + availableframe)
+                            counter += a - frame + availableframe
                             templist.remove(availableframe)
                         else:
-                            value += hand.distancesum * (b + frame - availableframe) / b
+                            value += depth * (a + frame - availableframe)
+                            counter += a + frame - availableframe
                             templist.remove(availableframe)
                     for leftframe in templist:
                         if leftframe < frame:
-                            value += thehand.distancesum * (a - frame + leftframe) / a
+                            value += thehanddepth * (a - frame + leftframe)
+                            counter += a - frame + leftframe
                         else:
-                            value += thehand.distancesum * (b + frame - leftframe) / b
+                            value += thehanddepth * (a + frame - leftframe)
+                            counter += a + frame - leftframe
+    
+    value /= counter
 
-    value = value / l
-    return ((c * thehand.distancesum) + (1 - c) * value)
+    return ((c * thehanddepth) + (1 - c) * value)
 
-def detectfloatingframes(handlist, frame_count, faultyframes):
+def detectfloatingframes(handlist, frame_count, faultyframes, lhmodel, rhmodel, ratio):
     metriclist = []
-    metricavg = 0
-    metricavgcounter = 0
     floatingframes = []
-    handdistancelist, lowavg = avgcalc(handlist)
+    # handdistancelist = avgcalc(handlist, ratio)
     index=0
     for _ in stqdm(range(len(handlist)), desc="Detecting floating hands..."):
         handsinfo = handlist[index]
@@ -275,35 +412,32 @@ def detectfloatingframes(handlist, frame_count, faultyframes):
                     hand.handframe,
                     hand.handtype,
                     mymetric(
-                        handdistancelist,
-                        lowavg,
+                        handlist,
                         hand.handtype,
                         hand.handframe,
                         frame_count,
                         7,
-                        7,
-                        0.85,
+                        0.5,
                         faultyframes,
+                        lhmodel,
+                        rhmodel,
+                        ratio
                     ),
                 ]
             )
         index+=1
-
-    for metric in metriclist:
-        metricavg += metric[2]
-        metricavgcounter += 1
-    metricavg = metricavg / metricavgcounter
-
-    bighandcounter = 0
-    for metric in metriclist:
-        if metric[2] > metricavg * 1.4:   #bighand: 영상에 포함된 앞뒤의 매우 큰 손 부분을 잘라주기 위함.
-            bighandcounter += 1
+    #    metricmedian=sorted(metriclist, key=lambda x : x[-1])[int(len(metriclist)/2)][2]
+    #    
+    #    bighandcounter = 0
+    #    for metric in metriclist:
+    #        if metric[2] < metricmedian * 0.7:   #bighand: 영상에 포함된 앞뒤의 매우 큰 손 부분을 잘라주기 위함.
+    #            bighandcounter += 1
     for metric in metriclist:
         if (
-#            metric[2] > metricavg * (1.4 - 1.2 * bighandcounter / len(metriclist))
-             metric[2] > 1.3*median(matriclist)
+            metric[2] < 0.9
         ):  # Differs from how many and how intensive of floating occurs in the whole playing
-            floatingframes.append([metric[0], metric[1]])
+            floatingframes.append([metric[0], metric[1], metric[2], 'floating'])
+        else: floatingframes.append([metric[0], metric[1], metric[2], 'notfloating'])
 
     #영상 길이가 짧으면 결과가 이상하게 나와서
     #floatingframes=[]
@@ -672,8 +806,10 @@ def handpositiondetector(handsinfo, floatingframes, keylist):
     pressedkeyslist = []
     pressingfingerslist = []
     fingertippositionslist = []
+    floatinghands = [info[:2].append(info[3]) for info in floatingframes]
+    pressedkeylist=[]
     for hand in handsinfo:
-        if [hand.handframe, hand.handtype] in floatingframes:
+        if [hand.handframe, hand.handtype, 'floating'] in floatinghands:
             pressedkeyslist.append([hand.handtype, "floating"])
             pressingfingerslist.append(["floating"])
             fingertippositionslist.append(["floating"])
@@ -686,15 +822,14 @@ def handpositiondetector(handsinfo, floatingframes, keylist):
             for j in range(len(keylist)):
                 if (
                     inside_or_outside(
-                        keylist[j], [hand.handlandmark[i].x*0.9+hand.handlandmark[i-1].x*0.1, hand.handlandmark[i].y*0.9+hand.handlandmark[i-1].y*0.1]
+                        keylist[j], [(hand.handlandmark[i].x+1)*0.5*0.9+(hand.handlandmark[i-1].x+1)*0.5*0.1, (hand.handlandmark[i].y+1)*0.5*0.9+(hand.handlandmark[i-1].y+1)*0.5*0.1] # [-1.1] (hand landmark) -> [0,1] (keyboard)
                     )
                     == 1
                 ):
                     pressedkeylist.append(j)
                     pressingfingerlist.append(int(i / 4))
-                    fingertippositionlist.append([hand.handlandmark[i].x*0.9+hand.handlandmark[i-1].x*0.1, hand.handlandmark[i].y*0.9+hand.handlandmark[i-1].y*0.1])
-
-
+                    fingertippositionlist.append([(hand.handlandmark[i].x+1)*0.5*0.9+(hand.handlandmark[i-1].x+1)*0.5*0.1, (hand.handlandmark[i].y+1)*0.5*0.9+(hand.handlandmark[i-1].y+1)*0.5*0.1])
+        
         if len(pressedkeylist) <= 1:
             pressedkeylist.append("floating")  # 가끔 안될때가있음
             pressingfingerlist.append("floating")

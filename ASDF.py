@@ -18,6 +18,10 @@ import pretty_midi
 import cv2
 import stroll    # https://github.com/exeex/midi-visualization with some modifications in order to use in streamlit environment
 import dill
+import subprocess
+import json
+from tqdm.auto import tqdm
+from stqdm import stqdm
 
 st.set_page_config(layout="wide")
 
@@ -253,13 +257,15 @@ def sthanddecider(tokenlist, keyhandlist):
             if finger[1]/totalframe >0.80: # 어떤 손가락이 총 frame의 80프로를 넘으면 강력한 후보로 선정, 강력한 후보가 하나만 있을 경우 자동으로 그 후보 선택
                 highcandidates.append(finger)
             c += 1
+
+        gt=clairdelune_150
         if c > 1:   # 후보 손가락이 두개 이상일때
             if len(highcandidates) == 1:
                 pressedfingerlist[i] = highcandidates[0][0]
                 if i <= 149:
-                    if pressedfingerlist[i] == chopinwaltz16_150[i]:
+                    if pressedfingerlist[i] == gt[i]:
                         correct += 1
-                    else: print(f"tokennumber: {i}, gt: {chopinwaltz16_150[i]}, pred:{pressedfingerlist[i]}")
+                    else: print(f"tokennumber: {i}, gt: {gt[i]}, pred:{pressedfingerlist[i]}")
             else:
                 undecidedtokeninfolist.append([i,tokenlist[i],pressedfingers,totalframe])  #Token number, token info, finger candidate, frame count of the token
                 undecided += 1
@@ -267,9 +273,9 @@ def sthanddecider(tokenlist, keyhandlist):
         elif c == 1:
             pressedfingerlist[i] = pressedfingers[0][0]
             if i <= 149:
-                if pressedfingerlist[i] == chopinwaltz16_150[i]:
+                if pressedfingerlist[i] == gt[i]:
                     correct += 1
-                else: print(f"tokennumber: {i}, gt: {chopinwaltz16_150[i]}, pred:{pressedfingerlist[i]}")
+                else: print(f"tokennumber: {i}, gt: {gt[i]}, pred:{pressedfingerlist[i]}")
 
         elif c == 0:
             pressedfingerlist[i] = "Noinfo"
@@ -330,6 +336,16 @@ def preprocess():
         delete_smart_tempo(mididirectory + selected_option)
         st.write(f'Changed {mididirectory + selected_option}.')
 
+def get_video_fps(video_path):
+    cmd = [
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=r_frame_rate',
+        '-of', 'json', video_path
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    data = json.loads(result.stdout.decode())
+    fps = eval(data['streams'][0]['r_frame_rate'])  # Convert string to fraction (e.g., '30000/1001')
+    return fps
+
 def prefinger():
     st.write("# ASDF: Automated System for Detecting Fingering")
     st.sidebar.success("Select the menu above.")
@@ -359,15 +375,17 @@ def prefinger():
         st.write(
             'fingering pre-labeling started'
         )
-        video = cv2.VideoCapture(filepath + videoname)
-        frame_rate = video.get(cv2.CAP_PROP_FPS)
+        video = cv2.VideoCapture(os.path.join(filepath, videoname))
+        if not video.isOpened():
+            print("Error: Failed to open video.")
+        frame_rate = get_video_fps(os.path.join(filepath, videoname))
         frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        dirname = (
-            filepath
-            + videoname[:-4]
-            + "_"
-            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+        print(frame_count)
+        dirname = (os.path.join(filepath,
+                videoname[:-4]
+                + "_"
+                + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            )
         )
         with open(
             dirname
@@ -409,12 +427,20 @@ def prefinger():
             cdistortion=keyboardcoordinateinfo[videoname[:-4]][7],
         )
         handfingerpositionlist = []
-        for handsinfo in handlist:
-            handfingerposition = handpositiondetector(
-                handsinfo, floatingframes, keyboard
-            )
-            handfingerpositionlist.append(handfingerposition)
         tokenlist = miditotoken(newmidiname[:-4], frame_rate, "simplified")
+        iter=0
+        pbar = tqdm(total=len(handlist))
+        for _ in stqdm(range(len(handlist)), desc="Detecting finger position information from frame images..."):
+            if iter<len(handlist):
+                handsinfo=handlist[iter]
+                handfingerposition = handpositiondetector(
+                    handsinfo, floatingframes, keyboard
+                )
+                handfingerpositionlist.append(handfingerposition)
+                iter += 1 
+            else:
+                break
+        pbar.close()
         prefingercorrespond =handfingercorresponder(
                 tokentoframeinfo(tokenlist, frame_count), handfingerpositionlist, keyboard, tokenlist
             )
@@ -657,34 +683,39 @@ def label():
         videoname = selected_option[:-4] + ".mp4"
 
     st.write("Selected MIDI:", selected_option)
-    video = cv2.VideoCapture(filepath + videoname)
-    frame_rate = video.get(cv2.CAP_PROP_FPS)
+    frame_rate = get_video_fps(os.path.join(filepath, videoname))
 
     dirname = (
-            filepath
-            + videoname[:-4]
-            + "_"
-            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
-        )
+            os.path.join(
+                filepath,
+                videoname[:-4]
+                + "_"
+                + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            )
+    )
     
     with open(
-            dirname
-            + "/fingerinfo_"
-            + videoname
-            + "_"
-            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
-            + ".pkl",
+            os.path.join(
+                dirname,
+                "fingerinfo_"
+                + videoname
+                + "_"
+                + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+                + ".pkl"
+            ),
             "rb",
     ) as f: 
         fingerinfo = pickle.load(f)
 
     with open(
-            dirname
-            + "/undecidedfingerlist_"
+        os.path.join(
+            dirname,
+            "undecidedfingerlist_"
             + videoname
             + "_"
             + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
-            + ".pkl",
+            + ".pkl"
+        ),
             "rb",
     ) as f: 
         undecidedfingerlist = pickle.load(f)

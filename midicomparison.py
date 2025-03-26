@@ -5,7 +5,7 @@ import math
 # STEP 1: Import the necessary modules.
 from shapely.geometry import Polygon, Point
 import geopandas
-import sys
+import sys, os
 
 sys.path.append("..")
 
@@ -17,9 +17,9 @@ sys.path.append("..")
 
 
 def generatetokenizer(file_name, fps, highres=False):
-    filepath = "./ASDF/midiconvert/"
-    print(f"midi: {filepath}{file_name}.mid")
-    midi = Score(filepath + file_name + ".mid")
+    midifilepath = os.path.join(os.path.expanduser('~'),'ASDF','ASDF','midiconvert')
+    print(f"midi: {midifilepath}/{file_name}.mid")
+    midi = Score(os.path.join(midifilepath , file_name + ".mid"))
     if not midi.tempos:
         tempo = 120
     else:
@@ -185,14 +185,14 @@ def handfingercorresponder(framemidilist, framehandfingerlist, keyboard, tokenli
                                     framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*1  # 1~5
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*1  # 1~5
                             
                             elif keydistance(keyboard, key[0], fingertippositioninfo[j-1])<halfkeyboarddistance:  # 손가락과 frame midi 반 건반 오차 (euclidean distance) (0.5만큼 보정)
                                 fingercount[
                                     framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*(0*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)+1*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2) # 1~5
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*(0*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)+1*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2) # 1~5
                         if handpositioninfo[0] == "Right":
                             if (abs(key[0] - handpositioninfo[j]) < 1):  # 손가락과 frame midi 일치
                                 fingercount[
@@ -200,14 +200,14 @@ def handfingercorresponder(framemidilist, framehandfingerlist, keyboard, tokenli
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
                                     + 5
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*1  # 6~10
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*1  # 6~10
                             elif keydistance(keyboard, key[0], fingertippositioninfo[j-1])<halfkeyboarddistance:  # 손가락과 frame midi 반 건반 오차 (euclidean distance) (0.5만큼 보정)
                                 fingercount[
                                     framehandfingerlist[frame][1][
                                         handspositioninfo.index(handpositioninfo)
                                     ][j - 1]
                                     + 5
-                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="of")*(0*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)+1*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2)  # 6~10
+                                ] += exception1(key[0],handpositioninfo[j])*onsetcoefficient(keyonset, key[0], frame, mode="off")*(0*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)+1*(1-keydistance(keyboard, key[0], fingertippositioninfo[j-1])/halfkeyboarddistance)**2)  # 6~10
                     handcounter += 1
                 if handpositioninfo[1] == "floating":
                     mindiffhand = handtypes[handtypes.index(handpositioninfo[0]) - 1]
