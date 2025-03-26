@@ -814,8 +814,8 @@ def annotate():
     else:
         videoname = selected_option[:-4] + ".mp4"
     st.write("Selected MIDI:", selected_option)
-    video = cv2.VideoCapture(filepath + videoname)
-    frame_rate = video.get(cv2.CAP_PROP_FPS)
+    
+    frame_rate = get_video_fps(os.path.join(filepath, videoname))
     tokeninfolist=miditotoken(newmidiname[:-4], frame_rate, "simplified")
     # 버튼 클릭 핸들러
     def button_click():
