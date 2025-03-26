@@ -2,4 +2,7 @@
 
 How to use ASDF system
 
-1. Download
+Download all the files in ASDF folder
+
+run the code:
+streamlit run ASDF/ASDF.py
