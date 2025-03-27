@@ -258,7 +258,7 @@ def sthanddecider(tokenlist, keyhandlist):
                 highcandidates.append(finger)
             c += 1
 
-        gt=scarlatti_150
+        gt=gymnopedie_150
         if c > 1:   # 후보 손가락이 두개 이상일때
             if len(highcandidates) == 1:
                 pressedfingerlist[i] = highcandidates[0][0]
@@ -307,7 +307,7 @@ def videodata():
     for file in files:
         if ".mp4" in file:
             newfiles.append(file)
-
+    newfiles.sort()
     selected_option = st.selectbox(
         "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
         newfiles,
@@ -327,6 +327,7 @@ def preprocess():
     for file in files:
         if not "_singletempo" in str(file):
             newfiles.append(file)
+    newfiles.sort()
     st.write("Settings (three dots at upperright side) - use wide mode")
     selected_option = st.selectbox(
         "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
@@ -356,6 +357,7 @@ def prefinger():
     for file in files:
         if "_singletempo" in str(file):
             newfiles.append(file)
+    newfiles.sort()
     st.write("Settings (three dots at upperright side) - use wide mode")
     selected_option = st.selectbox(
         "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
@@ -480,7 +482,7 @@ def keyboardcoordinate():
     for file in files:
         if ".mp4" in file:
             newfiles.append(file)
-
+    newfiles.sort()
     selected_option = st.selectbox(
         "Select video files:",
         newfiles,
@@ -801,7 +803,7 @@ def annotate():
     for file in files:
         if "_singletempo" in file:
             newfiles.append(file)
-    
+    newfiles.sort()
     selected_option = st.selectbox(
         "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
         newfiles,
@@ -846,8 +848,24 @@ def annotate():
         st.session_state.responses.append("Complete")
         return st.session_state.responses
     
+    def notecount(filename):
+        # Open your MIDI file
+        midi_file = mido.MidiFile(filename)
+
+        # Initialize a variable to count the notes
+        note_count = 0
+
+        # Iterate through all the messages in the MIDI file
+        for track in midi_file.tracks:
+            for msg in track:
+                if msg.type == 'note_on':  # 'note_on' message indicates a note is being pressed
+                    note_count += 1
+
+        # Print the total number of notes
+        return note_count
+
     # 현재 반복 단계에 따라 버튼을 표시
-    if st.session_state.index < 150:
+    if st.session_state.index < min(150, notecount(os.path.join(mididirectory,newmidiname))):
         st.write(
                 f"#### Choose the actual finger which pressed {tokeninfolist[st.session_state.index][1]}({pitch_list[tokeninfolist[st.session_state.index][1]]}) at frame {tokeninfolist[st.session_state.index][0]} or time {str(int(tokeninfolist[st.session_state.index][0]/frame_rate//60)).zfill(2)}:{str(math.floor(tokeninfolist[st.session_state.index][0]/frame_rate%60)).zfill(2)}:"
                 + format(
@@ -877,6 +895,12 @@ def annotate():
         st.write(f"Decided {st.session_state.index} of 150")
 
         # 버튼 표시
+        upcominglist=[]
+        for i in range(10):
+            if st.session_state.index+i<min(150, notecount(os.path.join(mididirectory,newmidiname))):
+                upcominglist.append(pitch_list[tokeninfolist[st.session_state.index+i][1]])
+        st.write(f"Present note and upcoming notes:{upcominglist}")
+
         user_input=st.text_input("Enter finger number from 1 to 10, comma between multiple fingers with no blank space")
         if st.button('next'):
             button_click()
@@ -884,7 +908,7 @@ def annotate():
         st.write("Completed all steps")
 
     # Complete 버튼 표시
-    if st.session_state.index >= 150:
+    if st.session_state.index >= min(150, notecount(os.path.join(mididirectory,newmidiname))):
         if st.button("Complete"):
             responses = complete()
             st.write(f"Responses: {responses}")

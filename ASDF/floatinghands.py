@@ -157,6 +157,7 @@ class handclass:
         self.handtype = handtype
         self.handlandmark = handlandmark
         self.handframe = handframe
+        self.handdepth = 1  #default
     
     def set_handdepth(self, handdepth):
         self.handdepth = handdepth
