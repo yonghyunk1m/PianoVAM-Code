@@ -42,7 +42,7 @@ detector = vision.HandLandmarker.create_from_options(options)
 # keyboard = generatekeyboard(lu=[94/1920, 459/1080], ru=[1-148/1920, 449/1080], ld=[95/1920,644/1080], rd=[1-149/1920,634/1080], blackratio=0.65, distortion=distortion) #Schumann fantasie
 # keyboard = generatekeyboard(lu=[122/1920, 454/1080], ru=[1-120/1920, 439/1080], ld=[125/1920,634/1080], rd=[1-119/1920,625/1080], blackratio=0.55, distortion=0.003) #Kapustin Sonata 2
 
-filepath = os.path.join(os.path.expanduser('~'),'ASDF','ASDF','videocapture') #Your home directory
+filepath = os.path.join(os.path.expanduser('~'),'ASDF','PianoVAM','ASDF','videocapture') #Your home directory
 
 def datagenerate(videoname):
     start = timemodule.time()

@@ -258,7 +258,7 @@ def sthanddecider(tokenlist, keyhandlist):
                 highcandidates.append(finger)
             c += 1
 
-        gt=clairdelune_150
+        gt=scarlatti_150
         if c > 1:   # 후보 손가락이 두개 이상일때
             if len(highcandidates) == 1:
                 pressedfingerlist[i] = highcandidates[0][0]
@@ -486,7 +486,7 @@ def keyboardcoordinate():
         newfiles,
     )
 
-    video = cv2.VideoCapture(filepath + selected_option)
+    video = cv2.VideoCapture(os.path.join(filepath, selected_option))
     ret, image = video.read()
     cv2.imwrite("tmp.jpg", image)
     value = streamlit_image_coordinates(
@@ -586,6 +586,7 @@ def keyboarddistortion():
     for file in files:
         if ".mp4" in file:
             newfiles.append(file)
+    newfiles.sort()
 
     selected_option = st.selectbox(
         "Select video files:",
@@ -610,7 +611,7 @@ def keyboarddistortion():
     if "cdistortion" not in st.session_state:
         st.session_state["cdistortion"] = keyboardcoordinateinfo[selected_option[:-4]][7]
 
-    video = cv2.VideoCapture(filepath + selected_option)
+    video = cv2.VideoCapture(os.path.join(filepath , selected_option))
     ret, image = video.read()
     img_np = np.array(image)
     img = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
@@ -631,7 +632,7 @@ def keyboarddistortion():
         st.image(keyboard_image)
     with col2:
         st.session_state["blackratio"]= st.slider("What is ratio of length of black keys and white keys?", 0.0, 1.0, st.session_state["blackratio"],step=0.05)
-        st.session_state["cdistortion"]= st.slider("At the point between E4 and F4, how much the virtual keyboard differs from originial point?", -0.3, 0.3, st.session_state["cdistortion"]*50)/50
+        st.session_state["cdistortion"]= st.slider("At the point between E4 and F4, how much the virtual keyboard differs from originial point?", -0.5, 0.5, st.session_state["cdistortion"]*50)/50
         st.session_state["ldistortion"]= st.slider("How distorted is the left side of image?", -0.3, 0.3, st.session_state["ldistortion"]*2000)/2000
         st.session_state["rdistortion"]= st.slider("How distorted is the right side of image?", -0.3, 0.3, st.session_state["rdistortion"]*2000)/2000
     if st.button("Save keyboard"):
@@ -652,6 +653,7 @@ def keyboarddistortion():
                     st.session_state["cdistortion"]
                 ]
                 pickle.dump(keyboardcoordinateinfo, f, pickle.HIGHEST_PROTOCOL) #lu, ru, ld, rd, blackratio, ldstortion, rdistortion, cdistortion
+        st.write("Saved keyboard.")
     if st.button("Reload image"):
         st.rerun()
 
