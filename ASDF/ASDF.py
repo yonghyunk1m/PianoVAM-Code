@@ -258,7 +258,7 @@ def sthanddecider(tokenlist, keyhandlist):
                 highcandidates.append(finger)
             c += 1
 
-        gt=gymnopedie_150
+        gt=jeuxdeau_150
         if c > 1:   # 후보 손가락이 두개 이상일때
             if len(highcandidates) == 1:
                 pressedfingerlist[i] = highcandidates[0][0]
@@ -666,11 +666,18 @@ def label():
     st.sidebar.success("Select the menu above.")
 
     files = os.listdir(mididirectory)
-    
+
+    newfiles = []
+    for file in files:
+        if "_singletempo" in str(file):
+            newfiles.append(file)
+    newfiles.sort()
+    st.write("Settings (three dots at upperright side) - use wide mode")
     selected_option = st.selectbox(
         "Select groundtruth MIDI files and **wait few seconds until the midi file is loaded** :",
-        files,
+        newfiles,
     )
+
 
     # Change the tempo to the desired BPM
     

@@ -171,6 +171,22 @@ def datagenerate(videoname):
     ) as f:
         pickle.dump(floatingframes, f)
 
+    if os.path.exists(        
+        dirname
+        + "/handlist_"
+        + videoname[:-4]
+        + "_"
+        + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+        + ".pkl",
+    ):
+        os.remove(
+            dirname
+            + "/handlist_"
+            + videoname[:-4]
+            + "_"
+            + f"{min_hand_detection_confidence*100}{min_hand_presence_confidence*100}{min_tracking_confidence*100}"
+            + ".pkl",
+        )
     with open(
         dirname
         + "/handlist_"

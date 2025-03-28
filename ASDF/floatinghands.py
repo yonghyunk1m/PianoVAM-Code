@@ -15,7 +15,7 @@ sys.set_int_max_str_digits(15000)   # sympy 계산할때 이거 limit에 걸려�
 MARGIN = 10  # pixels
 FONT_SIZE = 1
 FONT_THICKNESS = 2
-HANDEDNESS_TEXT_COLOR = (140, 171, 138)  # pastel green
+HANDEDNESS_TEXT_COLOR = (255, 235, 0)  # Middle yellow
 
 
 def draw_landmarks_on_image(rgb_image, detection_result):
@@ -46,7 +46,7 @@ def draw_landmarks_on_image(rgb_image, detection_result):
             solutions.drawing_styles.get_default_hand_connections_style(),
         )
 
-        # Get the top left corner of the detected hand's bounding box.
+    # Get the top left corner of the detected hand's bounding box.
         height, width, _ = annotated_image.shape
         x_coordinates = [landmark.x for landmark in hand_landmarks]
         y_coordinates = [landmark.y for landmark in hand_landmarks]
