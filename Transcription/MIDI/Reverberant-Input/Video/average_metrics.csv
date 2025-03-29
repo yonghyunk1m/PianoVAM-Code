@@ -1,0 +1,2 @@
+,note/precision,note/recall,note/f1,note-w-offsets/precision,note-w-offsets/recall,note-w-offsets/f1,note-w-velocity/precision,note-w-velocity/recall,note-w-velocity/f1
+average,0.6807221058486361,0.6781644595578534,0.6480363058980674,0.024893097489014766,0.02829481908886708,0.02578404997937947,0.48142945963397926,0.4615129024096672,0.4517416125067203
