@@ -8,7 +8,7 @@ import json
 import os
 import mido
 
-VISION_THRESHOLD = 2
+VISION_THRESHOLD = 2 # Hyperparameter; Tunable threshold determining the candidate range.
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2)
 
