@@ -1,4 +1,4 @@
-FingeringDetection# FingeringDetection: Automated System for Detecting Fingering
+# FingeringDetection: Automated System for Detecting Fingering
 import streamlit as st
 import sys, os
 import mediapipe as mp
