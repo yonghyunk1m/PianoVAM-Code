@@ -135,26 +135,47 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
         st.write(f"Total frame: {undecidedtokeninfolist[st.session_state.index][3]}")
 
         # 버튼 표시
+        
+        user_input=st.text_input("If there are no right candidates, type the finger number from 1 to 10, 1-5 and 6-10 are left/right thumb~little finger.",key=f"{st.session_state.index}-input")
+        if st.button('User input',key=f"{st.session_state.index}-inputbutton"):
+            st.session_state.history.append(st.session_state.index)
+            st.session_state.responses.append([int(user_input),undecidedtokeninfolist[st.session_state.index][0]])   #Finger, token numebr
+            st.session_state.index += 1
+            st.rerun()
         strval=''
+
         for button_name in buttons[st.session_state.index]:
             str_button_name = ''
-            for idx, val in enumerate(button_name):
-                if val <= 5:
-                    strval=f"L{val}"
-                elif val >= 6:
-                    strval=f"R{val-5}"
-                str_button_name += (strval if idx != len(button_name) -1 else str(val)) + (' frames' if idx == len(button_name) -1 else ': ')
+            if len(button_name) > 0:
+                for idx, val in enumerate(button_name):
+                    if val <= 5:
+                        strval=f"L{val}"
+                    elif val >= 6:
+                        strval=f"R{val-5}"
+                    str_button_name += (strval if idx != len(button_name) -1 else str(val)) + (' frames' if idx == len(button_name) -1 else ': ')
             if st.button(str_button_name, key=f"{st.session_state.index}-{button_name[0]}"):
                 button_click(button_name)
                 break
     else:
         st.write("Completed all steps")
 
-    # Complete 버튼 표시
+    # Complete 버튼 표시 + txt file 생성
     if st.session_state.index >= len(buttons):
         if st.button("Complete"):
             responses = complete()
             st.write(f"Responses: {responses}")
+            with open("./fingering.txt", "r") as fingering_textfile:
+                fingering_textlist=fingering_textfile.split("\n")
+            with open("./completefingering.txt", "w") as complete_textfile:
+                complete_textfile.write("Token number 1~5: Left hand, 6~10: Right hand (Both from thumb finger to little finger) \n")
+                human_label_count = 0 
+                for i in range(len(fingering_textlist)):
+                    if responses[human_label_count][1]==int(fingering_textlist[i].split(",")[0]):
+                        fingering_textfile.write(f"Tokennumber={i}, Finger={responses[human_label_count][0]}, \n")
+                    else:
+                        fingering_textfile.write(f"Tokennumber={i}, Finger={fingering_textlist[i].split(",")[1]}, \n")
+                        
+
 
     # Undo 버튼 표시
     if st.session_state.history:
@@ -274,6 +295,7 @@ def sthanddecider(tokenlist, keyhandlist):
         elif c == 0:
             pressedfingerlist[i] = "Noinfo"
             noinfo += 1
+            undecidedtokeninfolist.append([i,tokenlist[i],[],totalframe])
             print(f"tokennumber: {i}, noinfo")
     
         
@@ -445,13 +467,9 @@ def prefinger():
             prefingercorrespond,
         )
         
-        with open("./fingering.txt", "w") as fingering_textfile:
-            fingering_textfile.write("Token number 1~5: Left hand, 6~10: Right hand (Both from thumb finger to little finger) \n")
+        with open("./fingering.txt", "w") as fingering_textfile:            
             for i in range(len(fingerinfo)):
-                fingering=fingerinfo[i]
-                if len(fingering) > 1:
-                    fingering_textfile.write(f"Tokennumber={i}, Finger=Undecided{fingering}, \n")
-                else: fingering_textfile.write(f"Tokennumber={i}, Finger={fingering[0]}, \n")
+                fingering_textfile.write(f"{i},{fingerinfo[i]}, \n")
 
 
 
