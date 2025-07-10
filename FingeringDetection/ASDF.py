@@ -25,8 +25,10 @@ from stqdm import stqdm
 
 st.set_page_config(layout="wide")
 
-mididirectory = "./FingeringDetection/midiconvert/"
-videodirectory = "./FingeringDetection/videocapture/"
+# Get the directory where this script is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
+mididirectory = os.path.join(script_dir, "midiconvert") + "/"
+videodirectory = os.path.join(script_dir, "videocapture") + "/"
 
 def delete_smart_tempo(midiname):
     if not "_singletempo.mid" in midiname:
@@ -173,7 +175,7 @@ def button_input(undecidedtokeninfolist, fps, videoname, newmidiname):
                     if responses[human_label_count][1]==int(fingering_textlist[i].split(",")[0]):
                         fingering_textfile.write(f"Tokennumber={i}, Finger={responses[human_label_count][0]}, \n")
                     else:
-                        fingering_textfile.write(f"Tokennumber={i}, Finger={fingering_textlist[i].split(",")[1]}, \n")
+                        fingering_textfile.write(f"Tokennumber={i}, Finger={fingering_textlist[i].split(',')[1]}, \n")
                         
 
 
@@ -427,9 +429,7 @@ def prefinger():
             handlist = pickle.load(f)
         
         with open(
-            "./FingeringDetection/"
-            + "keyboardcoordinateinfo"
-            + ".pkl",
+            os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
             "rb",
         ) as f:
             keyboardcoordinateinfo = pickle.load(f)
@@ -524,14 +524,14 @@ def keyboardcoordinate():
         if st.button("leftupper"):
             lu=[value["x1"]/value['width'],value['y1']/value['height']]
             with open(
-                    "./FingeringDetection/lu.pkl",
+                    os.path.join(script_dir, "lu.pkl"),
                     "wb",
                 ) as f:
                     pickle.dump(lu, f)
         if st.button("leftunder"):
             ld=[value["x1"]/value['width'],value['y1']/value['height']]
             with open(
-                    "./FingeringDetection/ld.pkl",
+                    os.path.join(script_dir, "ld.pkl"),
                     "wb",
                 ) as f:
                     pickle.dump(ld, f)
@@ -539,60 +539,54 @@ def keyboardcoordinate():
         if st.button("rightupper"):
             ru=[value["x1"]/value['width'],value['y1']/value['height']]
             with open(
-                    "./FingeringDetection/ru.pkl",
+                    os.path.join(script_dir, "ru.pkl"),
                     "wb",
                 ) as f:
                     pickle.dump(ru, f)
         if st.button("rightunder"):
             rd=[value["x1"]/value['width'],value['y1']/value['height']]
             with open(
-                    "./FingeringDetection/rd.pkl",
+                    os.path.join(script_dir, "rd.pkl"),
                     "wb",
                 ) as f:
                     pickle.dump(rd, f)
     if st.button("Complete"):
         with open(
-                "./FingeringDetection/lu.pkl",
+                os.path.join(script_dir, "lu.pkl"),
                 "rb",
             ) as f:
             lu=pickle.load(f)
         with open(
-                "./FingeringDetection/ld.pkl",
+                os.path.join(script_dir, "ld.pkl"),
                 "rb",
             ) as f:
             ld=pickle.load(f)
         with open(
-                "./FingeringDetection/ru.pkl",
+                os.path.join(script_dir, "ru.pkl"),
                 "rb",
             ) as f:
             ru=pickle.load(f)
         with open(
-                "./FingeringDetection/rd.pkl",
+                os.path.join(script_dir, "rd.pkl"),
                 "rb",
             ) as f:
             rd=pickle.load(f)
-        if not "keyboardcoordinateinfo.pkl" in os.listdir("./FingeringDetection"):
+        if not "keyboardcoordinateinfo.pkl" in os.listdir(script_dir):
             with open(
-                    "./FingeringDetection/"
-                    "keyboardcoordinateinfo"
-                    + ".pkl",
+                    os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
                     "wb",
                 ) as f:
                     keyboardcoordinateinfo={"Status":"Generated"}
                     pickle.dump(keyboardcoordinateinfo, f)
         with open(
-                "./FingeringDetection/"
-                "keyboardcoordinateinfo"
-                + ".pkl",
+                os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
                 "rb",
             ) as f:
                 keyboardcoordinateinfo = pickle.load(f)
                 keyboardcoordinateinfo[selected_option[:-4]]=[lu,ru,ld,rd,0.5,0.0,0.0,0.0]
                 print(keyboardcoordinateinfo)
         with open(
-                "./FingeringDetection/"
-                "keyboardcoordinateinfo"
-                + ".pkl",
+                os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
                 "wb",
             ) as f:
                 print(keyboardcoordinateinfo)
@@ -619,9 +613,7 @@ def keyboarddistortion():
 
 
     with open(
-            "./FingeringDetection/"
-            + "keyboardcoordinateinfo"
-            + ".pkl",
+            os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
             "rb",
         ) as f:
             keyboardcoordinateinfo = pickle.load(f)
@@ -660,9 +652,7 @@ def keyboarddistortion():
         st.session_state["rdistortion"]= st.slider("How distorted is the right side of image?", -0.3, 0.3, st.session_state["rdistortion"]*2000)/2000
     if st.button("Save keyboard"):
         with open(
-                "./FingeringDetection/"
-                "keyboardcoordinateinfo"
-                + ".pkl",
+                os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
                 "wb",
             ) as f:
                 keyboardcoordinateinfo[selected_option[:-4]]=[
@@ -934,7 +924,7 @@ def annotate():
         if st.button("Complete"):
             responses = complete()
             st.write(f"Responses: {responses}")
-            file=open(f'./FingeringDetection/{newmidiname[:-16]}.txt', 'a')   #_singletempo.mid
+            file=open(os.path.join(script_dir, f'{newmidiname[:-16]}.txt'), 'a')   #_singletempo.mid
             for response in responses:
                 w=file.write(f'{response}, ')
             file.close()

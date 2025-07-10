@@ -13,11 +13,32 @@ numpy 1.24.1
 ```
 with your recorded MIDI files in FingeringDetection/midiconvert folder and video files in FingeringdDetection/videocapture folder.
 We recommend each video within no longer than 30 minutes if your MediaPipe environment does not provide GPU support.
+
+## Data Folder Structure Setup
+
+Before using the system, you need to prepare the following folder structure:
+
+```
+FingeringDetection/
+戍式式 midiconvert/          # Place your MIDI files here
+弛   戌式式 your_recording.mid
+戍式式 videocapture/         # Place your video files here
+弛   戌式式 your_recording.mp4
+戍式式 ASDF.py              # Main application file
+戍式式 main.py
+戍式式 midicomparison.py
+戍式式 hand_landmarker.task
+戌式式 other files...
+```
+
+**Important Notes:**
+- MIDI and video files should have the same base name (e.g., `song1.mid` and `song1.mp4`)
+- Video files must be in MP4 format
+- MIDI files must be in .mid format
+- The system will automatically create additional subfolders and data files during processing
+
 * 1. Download the whole FingeringDetection folder.
-* 2. Change the directory part of line 35 of Fingeringdetection/main.py and line 20 of FingeringDetection/midicomparison.py to your home directory:
-```
-filepath = os.path.join(os.path.expanduser('~'),your-directory,'FingeringDetection','videocapture') #Your home directory
-```
+* 2. ~~Change the directory part...~~ **No longer needed!** File paths are now automatically detected based on script location.
 * 3. Run:
 ```
 streamlit run ./FingeringDetection/ASDF.py

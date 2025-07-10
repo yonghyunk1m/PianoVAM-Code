@@ -17,7 +17,9 @@ sys.path.append("..")
 
 
 def generatetokenizer(file_name, fps, highres=False):
-    midifilepath = os.path.join(os.path.expanduser('~'),'ASDF','PianoVAM','FingeringDetection','midiconvert')
+    # Get the directory where this script is located and find midiconvert directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    midifilepath = os.path.join(script_dir, 'midiconvert')
     print(f"midi: {midifilepath}/{file_name}.mid")
     midi = Score(os.path.join(midifilepath , file_name + ".mid"))
     if not midi.tempos:

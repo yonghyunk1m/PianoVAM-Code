@@ -15,24 +15,82 @@ from stqdm import stqdm
 import time as timemodule
 # Note: file order is main>evaluate>midicomparison>floatinghands
 
-# STEP 2: Create an HandLandmarker object.
-base_options = python.BaseOptions(model_asset_path="./FingeringDetection/hand_landmarker.task")
+# STEP 2: Create an HandLandmarker object with GPU support.
+# Get the directory where this script is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+def check_gpu_support():
+    """GPU 지원 여부를 확인합니다."""
+    try:
+        # OpenCV GPU 지원 확인
+        has_opencv_gpu = cv2.cuda.getCudaEnabledDeviceCount() > 0
+        
+        # TensorFlow GPU 지원 확인 (선택적)
+        try:
+            import tensorflow as tf
+            has_tf_gpu = len(tf.config.list_physical_devices('GPU')) > 0
+        except ImportError:
+            has_tf_gpu = False
+        
+        print(f"🔍 GPU 지원 상태:")
+        print(f"   OpenCV CUDA: {'✅ 사용 가능' if has_opencv_gpu else '❌ 사용 불가'}")
+        print(f"   TensorFlow GPU: {'✅ 사용 가능' if has_tf_gpu else '❌ 사용 불가'}")
+        
+        if not has_opencv_gpu and not has_tf_gpu:
+            print("💡 GPU 가속을 위해 CUDA 드라이버와 OpenCV-CUDA 또는 TensorFlow-GPU를 설치하세요.")
+            
+        return has_opencv_gpu or has_tf_gpu
+            
+    except Exception as e:
+        print(f"⚠️ GPU 지원 확인 중 오류: {e}")
+        return False
+
+def create_handlandmarker_with_gpu():
+    """GPU 지원을 포함한 HandLandmarker 객체를 생성합니다."""
+    hand_landmarker_path = os.path.join(script_dir, "hand_landmarker.task")
+    
+    # GPU delegate 설정 시도
+    base_options = python.BaseOptions(model_asset_path=hand_landmarker_path)
+    
+    try:
+        # GPU delegate 시도
+        if hasattr(python.BaseOptions, 'Delegate') and hasattr(python.BaseOptions.Delegate, 'GPU'):
+            base_options = python.BaseOptions(
+                model_asset_path=hand_landmarker_path,
+                delegate=python.BaseOptions.Delegate.GPU
+            )
+            print("🚀 GPU delegate 설정 완료 - GPU 가속 활성화")
+        else:
+            print("⚠️ GPU delegate 미지원 - CPU 사용")
+    except Exception as e:
+        print(f"⚠️ GPU delegate 설정 실패, CPU 사용: {e}")
+    
+    options = vision.HandLandmarkerOptions(
+        base_options=base_options,
+        running_mode=mp.tasks.vision.RunningMode.VIDEO,
+        num_hands=2,
+        min_hand_detection_confidence=min_hand_detection_confidence,
+        min_hand_presence_confidence=min_hand_presence_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+    )
+    
+    return vision.HandLandmarker.create_from_options(options)
+
+# Create paths relative to script location
 min_hand_detection_confidence = 0.85
 min_hand_presence_confidence = 0.8
 min_tracking_confidence = 0.5
 VisionRunningMode = mp.tasks.vision.RunningMode
 
-options = vision.HandLandmarkerOptions(
-    base_options=base_options,
-    running_mode=VisionRunningMode.VIDEO,
-    num_hands=2,
-    min_hand_detection_confidence=min_hand_detection_confidence,
-    min_hand_presence_confidence=min_hand_presence_confidence,
-    min_tracking_confidence=min_tracking_confidence,
-)
-detector = vision.HandLandmarker.create_from_options(options)
+# GPU 지원 확인
+print("🚀 MediaPipe HandLandmarker 초기화...")
+check_gpu_support()
 
-filepath = os.path.join(os.path.expanduser('~'),'ASDF','PianoVAM','FingeringDetection','videocapture') #Your home directory
+# HandLandmarker 생성 (GPU 지원 포함)
+detector = create_handlandmarker_with_gpu()
+print("✅ MediaPipe HandLandmarker 초기화 완료")
+
+filepath = os.path.join(script_dir, 'videocapture') #Video capture directory relative to script
 
 def datagenerate(videoname):
     start = timemodule.time()
@@ -53,9 +111,7 @@ def datagenerate(videoname):
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_rate = video.get(cv2.CAP_PROP_FPS)
     with open(
-        "./FingeringDetection/"
-        + "keyboardcoordinateinfo"
-        + ".pkl",
+        os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
         "rb",
     ) as f:
         keyboardcoordinateinfo = pickle.load(f)
