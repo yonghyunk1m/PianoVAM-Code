@@ -7,7 +7,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from PIL import Image
-from floatinghands_pytorch_complete import *
+from floatinghands import *
 from midicomparison import *
 import pickle
 from tqdm.auto import tqdm

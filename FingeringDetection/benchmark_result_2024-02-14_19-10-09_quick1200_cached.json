@@ -1,0 +1,119 @@
+{
+  "scipy_time": 3.1404473781585693,
+  "pytorch_time": 40.472941398620605,
+  "speedup": 0.07759375201392212,
+  "agreement_rate": 33.44851416724257,
+  "scipy_floating_count": 1507,
+  "pytorch_floating_count": 1507,
+  "existing_floating_count": 1507,
+  "avg_depth_difference": 0.014675427624088133,
+  "max_depth_difference": 0.4518981446637831,
+  "meaningful_diff_count": 866,
+  "meaningful_diff_rate": 59.847961299239806,
+  "near_boundary_cases": 16,
+  "status_mismatches": [
+    {
+      "frame": 1164,
+      "handtype": "Right",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 1.0609564776211777,
+      "pytorch_depth": 1.0718111515528865,
+      "depth_diff": 0.010854673931708803,
+      "near_boundary": false
+    },
+    {
+      "frame": 35,
+      "handtype": "Right",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.996003364370302,
+      "pytorch_depth": 1.068896524303531,
+      "depth_diff": 0.07289315993322909,
+      "near_boundary": false
+    },
+    {
+      "frame": 753,
+      "handtype": "Left",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9086364990658581,
+      "pytorch_depth": 0.9086364995448363,
+      "depth_diff": 4.789781904435131e-10,
+      "near_boundary": false
+    },
+    {
+      "frame": 847,
+      "handtype": "Right",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9986490098274738,
+      "pytorch_depth": 1.0551801619939103,
+      "depth_diff": 0.05653115216643645,
+      "near_boundary": false
+    },
+    {
+      "frame": 981,
+      "handtype": "Right",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9438011110284168,
+      "pytorch_depth": 0.9022172675424392,
+      "depth_diff": 0.041583843485977545,
+      "near_boundary": false
+    },
+    {
+      "frame": 570,
+      "handtype": "Left",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9508351517448832,
+      "pytorch_depth": 0.840567527393137,
+      "depth_diff": 0.1102676243517462,
+      "near_boundary": false
+    },
+    {
+      "frame": 1194,
+      "handtype": "Right",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9961314969843333,
+      "pytorch_depth": 0.996131496850523,
+      "depth_diff": 1.3381029617676177e-10,
+      "near_boundary": false
+    },
+    {
+      "frame": 798,
+      "handtype": "Right",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9606902581101711,
+      "pytorch_depth": 0.9652529418020696,
+      "depth_diff": 0.004562683691898495,
+      "near_boundary": false
+    },
+    {
+      "frame": 452,
+      "handtype": "Right",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9407359914862861,
+      "pytorch_depth": 0.9407359915018013,
+      "depth_diff": 1.55152557468341e-11,
+      "near_boundary": false
+    },
+    {
+      "frame": 783,
+      "handtype": "Left",
+      "scipy_status": "notfloating",
+      "pytorch_status": "floating",
+      "scipy_depth": 0.9155948629913362,
+      "pytorch_depth": 0.9155948629720994,
+      "depth_diff": 1.9236834347680087e-11,
+      "near_boundary": false
+    }
+  ],
+  "total_comparisons": 1447,
+  "precision_threshold": 0.001,
+  "comparison_video_detailed": "comparison_2024-02-14_19-10-09_detailed_vscode_compatible_with_audio_h264.mp4"
+}

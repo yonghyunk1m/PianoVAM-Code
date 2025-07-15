@@ -5,7 +5,7 @@ import os
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from floatinghands_torch_pure import *
+from floatinghands import *
 from midicomparison import *
 import pickle
 from tqdm.auto import tqdm
@@ -82,9 +82,10 @@ min_tracking_confidence = 0.5
 VisionRunningMode = mp.tasks.vision.RunningMode
 
 # GPU 지원 확인
-# MediaPipe HandLandmarker 초기화 (출력 간소화)
 print("🚀 MediaPipe HandLandmarker 초기화...")
 check_gpu_support()
+
+# HandLandmarker 생성 (GPU 지원 포함)
 detector = create_handlandmarker_with_gpu()
 print("✅ MediaPipe HandLandmarker 초기화 완료")
 
@@ -108,6 +109,21 @@ def datagenerate(videoname):
 
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_rate = video.get(cv2.CAP_PROP_FPS)
+    with open(
+        os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
+        "rb",
+    ) as f:
+        keyboardcoordinateinfo = pickle.load(f)
+    keyboard = generatekeyboard(
+        lu=keyboardcoordinateinfo[videoname[:-4]][0],
+        ru=keyboardcoordinateinfo[videoname[:-4]][1],
+        ld=keyboardcoordinateinfo[videoname[:-4]][2],
+        rd=keyboardcoordinateinfo[videoname[:-4]][3],
+        blackratio=keyboardcoordinateinfo[videoname[:-4]][4],
+        ldistortion=keyboardcoordinateinfo[videoname[:-4]][5],
+        rdistortion=keyboardcoordinateinfo[videoname[:-4]][6],
+        cdistortion=keyboardcoordinateinfo[videoname[:-4]][7],
+    )
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
@@ -159,6 +175,13 @@ def datagenerate(videoname):
             handlist.append(handsinfo)
             handtypelist.append([hand.handtype for hand in handsinfo])
             
+            # 키보드 시각화 이미지 생성 (디버깅 용도)
+            if frame == max(0, frame_count - 100):
+                keyboard_image = draw_keyboard_on_image(image.numpy_view(), keyboard)
+                cv2.imwrite(
+                    dirname + "/" + "keyboard.jpg", cv2.cvtColor(keyboard_image, cv2.COLOR_BGR2RGB)
+                )
+            
             pbar2.update(1)
             frame += 1
     
@@ -209,23 +232,30 @@ def datagenerate(videoname):
     ) as f:
         pickle.dump(handlist, f)
 
-    print("✅ 비디오 처리 완료: 데이터 저장됨")
+    print("Data generated and saved")
+    print(
+        f"faulty frames:{len(faultyframe)}, nohand frames:{len(nohandframelist)}"
+    )
     
     # 처리 완료 후 불필요한 파일들 정리
+    print("Cleaning up temporary files...")
     cleanup_count = 0
     for file in os.scandir(dirname):
-        # .pkl 파일만 보존, 나머지는 삭제
-        if file.name.endswith('.pkl'):
+        # .pkl 파일과 keyboard.jpg는 보존, 나머지는 삭제
+        if file.name.endswith('.pkl') or file.name == 'keyboard.jpg':
             continue
         else:
             try:
                 os.remove(file.path)
                 cleanup_count += 1
             except Exception as e:
-                pass  # 정리 오류는 무시
+                print(f"Warning: Could not remove {file.name}: {e}")
+    
+    if cleanup_count > 0:
+        print(f"Cleaned up {cleanup_count} temporary files")
     
     datatime = timemodule.time()
-    print(f"📊 처리 시간: {datatime-start:.1f}초, faulty: {len(faultyframe)}, nohand: {len(nohandframelist)}")
+    print(f"Data generation time: {datatime-start: .5f} sec")
 
 
 
@@ -309,6 +339,13 @@ def process_all_videos():
     
     if remaining == 0:
         print("🎉 모든 비디오 파일이 이미 처리되었습니다!")
+        return
+    
+    # 키보드 정보 파일 확인
+    keyboard_info_path = os.path.join(script_dir, "keyboardcoordinateinfo.pkl")
+    if not os.path.exists(keyboard_info_path):
+        print("❌ keyboardcoordinateinfo.pkl 파일이 없습니다.")
+        print("   먼저 키보드 좌표 정보를 설정해주세요.")
         return
     
     # 미완료 파일들만 처리

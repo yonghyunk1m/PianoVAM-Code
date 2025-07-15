@@ -45,6 +45,8 @@ pip install pretty_midi==0.2.10
 pip install streamlit==1.37.1
 pip install streamlit_image_coordinates==0.2.0
 pip install numpy==1.24.1
+pip install cupy-cuda12x
+pip install torch torchvision torchaudio
 
 # Install MediaPipe (required for video processing)
 echo "Installing MediaPipe..."
