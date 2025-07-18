@@ -7,7 +7,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from PIL import Image
-from floatinghands_pytorch_complete import *
+from floatinghands_torch_pure import *
 from midicomparison import *
 import pickle
 from tqdm.auto import tqdm
@@ -22,8 +22,28 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 def check_gpu_support():
     """GPU 지원 여부를 확인합니다."""
     try:
-        # OpenCV GPU 지원 확인
-        has_opencv_gpu = cv2.cuda.getCudaEnabledDeviceCount() > 0
+        # OpenCV GPU 지원 확인 (안전하게 처리)
+        try:
+            has_opencv_gpu = cv2.cuda.getCudaEnabledDeviceCount() > 0
+        except AttributeError:
+            # OpenCV가 CUDA 지원 없이 컴파일된 경우
+            has_opencv_gpu = False
+            print("⚠️  OpenCV가 CUDA 지원 없이 컴파일되었습니다.")
+        
+        # PyTorch GPU 지원 확인
+        try:
+            import torch
+            has_torch_gpu = torch.cuda.is_available() and torch.cuda.device_count() > 0
+            if has_torch_gpu:
+                gpu_count = torch.cuda.device_count()
+                gpu_names = [torch.cuda.get_device_name(i) for i in range(gpu_count)]
+            else:
+                gpu_count = 0
+                gpu_names = []
+        except ImportError:
+            has_torch_gpu = False
+            gpu_count = 0
+            gpu_names = []
         
         # TensorFlow GPU 지원 확인 (선택적)
         try:
@@ -34,12 +54,21 @@ def check_gpu_support():
         
         print(f"🔍 GPU 지원 상태:")
         print(f"   OpenCV CUDA: {'✅ 사용 가능' if has_opencv_gpu else '❌ 사용 불가'}")
+        print(f"   PyTorch GPU: {'✅ 사용 가능' if has_torch_gpu else '❌ 사용 불가'}")
+        if has_torch_gpu:
+            print(f"   🎮 GPU 장치: {gpu_count}개")
+            for i, name in enumerate(gpu_names):
+                print(f"      GPU {i}: {name}")
         print(f"   TensorFlow GPU: {'✅ 사용 가능' if has_tf_gpu else '❌ 사용 불가'}")
         
-        if not has_opencv_gpu and not has_tf_gpu:
-            print("💡 GPU 가속을 위해 CUDA 드라이버와 OpenCV-CUDA 또는 TensorFlow-GPU를 설치하세요.")
+        # PyTorch GPU가 있으면 충분함 (main processing은 PyTorch로 수행)
+        if has_torch_gpu:
+            print("✅ PyTorch GPU 가속이 사용 가능합니다!")
+            print("   (OpenCV CUDA 없이도 메인 처리는 GPU로 가속됩니다)")
+        elif not has_opencv_gpu and not has_tf_gpu:
+            print("💡 GPU 가속을 위해 PyTorch with CUDA 또는 OpenCV-CUDA를 설치하세요.")
             
-        return has_opencv_gpu or has_tf_gpu
+        return has_torch_gpu or has_opencv_gpu or has_tf_gpu
             
     except Exception as e:
         print(f"⚠️ GPU 지원 확인 중 오류: {e}")
@@ -49,32 +78,57 @@ def create_handlandmarker_with_gpu():
     """GPU 지원을 포함한 HandLandmarker 객체를 생성합니다."""
     hand_landmarker_path = os.path.join(script_dir, "hand_landmarker.task")
     
-    # GPU delegate 설정 시도
-    base_options = python.BaseOptions(model_asset_path=hand_landmarker_path)
-    
+    # 1. GPU delegate 먼저 시도
     try:
-        # GPU delegate 시도
         if hasattr(python.BaseOptions, 'Delegate') and hasattr(python.BaseOptions.Delegate, 'GPU'):
             base_options = python.BaseOptions(
                 model_asset_path=hand_landmarker_path,
                 delegate=python.BaseOptions.Delegate.GPU
             )
-            print("🚀 GPU delegate 설정 완료 - GPU 가속 활성화")
+            print("🚀 GPU delegate 설정 시도...")
+            
+            options = vision.HandLandmarkerOptions(
+                base_options=base_options,
+                running_mode=mp.tasks.vision.RunningMode.VIDEO,
+                num_hands=2,
+                min_hand_detection_confidence=min_hand_detection_confidence,
+                min_hand_presence_confidence=min_hand_presence_confidence,
+                min_tracking_confidence=min_tracking_confidence,
+            )
+            
+            # GPU HandLandmarker 생성 시도
+            detector = vision.HandLandmarker.create_from_options(options)
+            print("✅ GPU 가속 HandLandmarker 초기화 완료")
+            return detector
+            
         else:
-            print("⚠️ GPU delegate 미지원 - CPU 사용")
+            print("⚠️ GPU delegate 미지원")
+            raise Exception("GPU delegate not supported")
+            
     except Exception as e:
-        print(f"⚠️ GPU delegate 설정 실패, CPU 사용: {e}")
+        print(f"⚠️ GPU HandLandmarker 초기화 실패: {e}")
+        print("🔄 CPU 모드로 폴백...")
     
-    options = vision.HandLandmarkerOptions(
-        base_options=base_options,
-        running_mode=mp.tasks.vision.RunningMode.VIDEO,
-        num_hands=2,
-        min_hand_detection_confidence=min_hand_detection_confidence,
-        min_hand_presence_confidence=min_hand_presence_confidence,
-        min_tracking_confidence=min_tracking_confidence,
-    )
-    
-    return vision.HandLandmarker.create_from_options(options)
+    # 2. CPU 모드로 폴백
+    try:
+        base_options = python.BaseOptions(model_asset_path=hand_landmarker_path)
+        
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=mp.tasks.vision.RunningMode.VIDEO,
+            num_hands=2,
+            min_hand_detection_confidence=min_hand_detection_confidence,
+            min_hand_presence_confidence=min_hand_presence_confidence,
+            min_tracking_confidence=min_tracking_confidence,
+        )
+        
+        detector = vision.HandLandmarker.create_from_options(options)
+        print("✅ CPU HandLandmarker 초기화 완료")
+        return detector
+        
+    except Exception as e:
+        print(f"❌ CPU HandLandmarker 초기화도 실패: {e}")
+        raise e
 
 # Create paths relative to script location
 min_hand_detection_confidence = 0.85
@@ -110,21 +164,23 @@ def datagenerate(videoname):
 
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_rate = video.get(cv2.CAP_PROP_FPS)
-    with open(
-        os.path.join(script_dir, "keyboardcoordinateinfo.pkl"),
-        "rb",
-    ) as f:
-        keyboardcoordinateinfo = pickle.load(f)
-    keyboard = generatekeyboard(
-        lu=keyboardcoordinateinfo[videoname[:-4]][0],
-        ru=keyboardcoordinateinfo[videoname[:-4]][1],
-        ld=keyboardcoordinateinfo[videoname[:-4]][2],
-        rd=keyboardcoordinateinfo[videoname[:-4]][3],
-        blackratio=keyboardcoordinateinfo[videoname[:-4]][4],
-        ldistortion=keyboardcoordinateinfo[videoname[:-4]][5],
-        rdistortion=keyboardcoordinateinfo[videoname[:-4]][6],
-        cdistortion=keyboardcoordinateinfo[videoname[:-4]][7],
-    )
+    
+    # Load keyboard data using new JSON format
+    video_name = videoname[:-4]  # Remove .mp4 extension
+    json_file_path = os.path.join(script_dir, "pixel_points", f"{video_name}_pixel_points.json")
+    
+    if os.path.exists(json_file_path):
+        print(f"📁 Loading keyboard data from JSON: {json_file_path}")
+        keyboard, black_key_data = load_keyboard_from_json_pixel_points(json_file_path)
+        if keyboard is None:
+            print("❌ Failed to load keyboard data from JSON")
+            exit(1)
+        print(f"✅ Keyboard loaded successfully with {len(keyboard)} keys")
+    else:
+        print(f"❌ JSON file not found: {json_file_path}")
+        print("💡 Please ensure the JSON file exists in the pixel_points directory")
+        print(f"   Expected format: {video_name}_pixel_points.json")
+        exit(1)
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
@@ -192,7 +248,14 @@ def datagenerate(videoname):
             handlist.append(handsinfo)
             handtypelist.append([hand.handtype for hand in handsinfo])
             if frame == max(0, file_count - 100):
-                keyboard_image = draw_keyboard_on_image(image.numpy_view(), keyboard)
+                # Use enhanced drawing function with colored polygon lines
+                keyboard_image = draw_keyboard_with_points(
+                    image.numpy_view(), 
+                    keyboard, 
+                    None,  # keystone_data not needed for drawing
+                    black_key_data, 
+                    show_intermediate_points=True
+                )
                 cv2.imwrite(
                     dirname + "/" + "keyboard.jpg", cv2.cvtColor(keyboard_image, cv2.COLOR_BGR2RGB)
                 )

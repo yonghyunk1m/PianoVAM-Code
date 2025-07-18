@@ -108,6 +108,32 @@ def datagenerate(videoname):
 
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_rate = video.get(cv2.CAP_PROP_FPS)
+    
+    # Load keyboard data using new JSON format (optional for floating hands detection)
+    video_name = videoname[:-4]  # Remove .mp4 extension
+    json_file_path = os.path.join(script_dir, "pixel_points", f"{video_name}_pixel_points.json")
+    
+    keyboard = None
+    black_key_data = None
+    keystone_data = None
+    
+    if os.path.exists(json_file_path):
+        print(f"📁 Loading keyboard data from JSON: {json_file_path}")
+        try:
+            keyboard, black_key_data = load_keyboard_from_json_pixel_points(json_file_path)
+            if keyboard is not None:
+                print(f"✅ Keyboard loaded successfully with {len(keyboard)} keys")
+            else:
+                print("⚠️ Keyboard loading failed")
+                print("   Continuing with floating hands detection only...")
+        except Exception as e:
+            print(f"⚠️ Keyboard loading failed: {e}")
+            print("   Continuing with floating hands detection only...")
+    else:
+        print(f"⚠️ JSON file not found: {json_file_path}")
+        print(f"   Expected format: {video_name}_pixel_points.json")
+        print("   Continuing with floating hands detection only...")
+    
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 

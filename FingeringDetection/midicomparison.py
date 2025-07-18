@@ -116,13 +116,19 @@ def betweendotpolygon(dot, polygon):
     return float(gpoly.distance(point).iloc[0])
 def keydistance(keyboard, key, fingertipposition):
     distance = 0
-
     dlist=[]
 
-    if inside_or_outside(keyboard[key], fingertipposition)==1:
+    # Handle new keyboard format (list of key dictionaries with polygon data)
+    if isinstance(keyboard[key], dict) and 'polygon' in keyboard[key]:
+        key_polygon = keyboard[key]['polygon']
+    else:
+        # Fallback to old format
+        key_polygon = keyboard[key]
+
+    if inside_or_outside(key_polygon, fingertipposition)==1:
         return 0
-    elif inside_or_outside(keyboard[key], fingertipposition)!=1:
-        dlist.append(betweendotpolygon(fingertipposition, keyboard[key]))
+    elif inside_or_outside(key_polygon, fingertipposition)!=1:
+        dlist.append(betweendotpolygon(fingertipposition, key_polygon))
     distance += min(dlist)
     return distance
 
@@ -164,7 +170,17 @@ def handfingercorresponder(framemidilist, framehandfingerlist, keyboard, tokenli
                 keyonset[token[1]]=list(range(token[0],math.ceil(token[0]+0.2*(token[2]-token[0]))))
     keyhandlist = []
     handtypes = ["Left", "Right"]
-    halfkeyboarddistance=(keyboard[0][1][0]-keyboard[0][0][0])/2
+    # Calculate half keyboard distance based on new format
+    if isinstance(keyboard[0], dict) and 'polygon' in keyboard[0]:
+        # New format: use polygon points to calculate key width
+        key_polygon = keyboard[0]['polygon']
+        if len(key_polygon) >= 2:
+            halfkeyboarddistance = (key_polygon[1][0] - key_polygon[0][0]) / 2
+        else:
+            halfkeyboarddistance = 0.05  # Default fallback
+    else:
+        # Old format fallback
+        halfkeyboarddistance = (keyboard[0][1][0] - keyboard[0][0][0]) / 2
     
     frame=0
     for _ in stqdm(range(len(framemidilist)), desc="Correponding frame images to midi..."):
