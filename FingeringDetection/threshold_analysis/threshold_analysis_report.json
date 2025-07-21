@@ -1,0 +1,147 @@
+{
+  "analysis_timestamp": "2025-07-21T13:28:26.382628",
+  "configuration": {
+    "depth_data_dir": "depth_data",
+    "midi_dir": "/home/jhbae/PianoVAM-Code/FingeringDetection/midiconvert",
+    "target_fps": 20
+  },
+  "datasets": {
+    "total_videos": 60,
+    "videos_with_midi": 60,
+    "videos_without_midi": 0
+  },
+  "analysis_results": {
+    "distribution": {
+      "overall_stats": {
+        "Left": {
+          "count": 715891,
+          "mean": "1.0667732",
+          "std": "0.092801504",
+          "min": "0.5025766",
+          "max": "1.499989",
+          "median": "1.0627755",
+          "q25": 1.0122087001800537,
+          "q75": 1.1160200238227844,
+          "q90": 1.173780083656311,
+          "q95": 1.2199451327323914
+        },
+        "Right": {
+          "count": 666265,
+          "mean": "1.0704027",
+          "std": "0.08788904",
+          "min": "0.5444898",
+          "max": "1.4999532",
+          "median": "1.0621662",
+          "q25": 1.0136488676071167,
+          "q75": 1.1162880659103394,
+          "q90": 1.1760623693466186,
+          "q95": 1.2268334388732909
+        }
+      },
+      "midi_based_stats": {
+        "Left": {
+          "playing": {
+            "count": 327523,
+            "mean": "1.0682087",
+            "std": "0.080981664",
+            "median": "1.0637478"
+          },
+          "not_playing": {
+            "count": 388368,
+            "mean": "1.0655624",
+            "std": "0.10169177",
+            "median": "1.061846"
+          }
+        },
+        "Right": {
+          "playing": {
+            "count": 427988,
+            "mean": "1.0674934",
+            "std": "0.08278588",
+            "median": "1.060214"
+          },
+          "not_playing": {
+            "count": 238277,
+            "mean": "1.0756291",
+            "std": "0.09615841",
+            "median": "1.0658823"
+          }
+        }
+      }
+    },
+    "thresholds": {
+      "Left": {
+        "q75": "1.11602",
+        "q80": "1.1304878",
+        "q85": "1.1484878",
+        "q90": "1.1737801",
+        "mean_plus_std": "1.1595746",
+        "mean_plus_half_std": "1.1131738",
+        "roc_optimal": "0.98561",
+        "auc_score": 0.5092494129904606,
+        "midi_mean_between": "1.0668855",
+        "fisher_optimal": "1.0671817",
+        "current": 0.9
+      },
+      "Right": {
+        "q75": "1.1162881",
+        "q80": "1.131313",
+        "q85": "1.1498444",
+        "q90": "1.1760623",
+        "mean_plus_std": "1.1582917",
+        "mean_plus_half_std": "1.1143472",
+        "roc_optimal": "0.8885117",
+        "auc_score": 0.47850797891208274,
+        "midi_mean_between": "1.0715613",
+        "fisher_optimal": "1.0709566",
+        "current": 0.9
+      }
+    },
+    "recommendations": {
+      "Left": {
+        "primary": {
+          "value": "0.98561",
+          "method": "ROC Optimal (Youden's J)",
+          "confidence": "High",
+          "reason": "MIDI 온셋 기반 최적화"
+        },
+        "alternatives": [
+          {
+            "value": 0.9,
+            "method": "current"
+          },
+          {
+            "value": "1.0668855",
+            "method": "midi_mean_between"
+          },
+          {
+            "value": "1.0671817",
+            "method": "fisher_optimal"
+          }
+        ]
+      },
+      "Right": {
+        "primary": {
+          "value": "0.8885117",
+          "method": "ROC Optimal (Youden's J)",
+          "confidence": "High",
+          "reason": "MIDI 온셋 기반 최적화"
+        },
+        "alternatives": [
+          {
+            "value": 0.9,
+            "method": "current"
+          },
+          {
+            "value": "1.0709566",
+            "method": "fisher_optimal"
+          },
+          {
+            "value": "1.0715613",
+            "method": "midi_mean_between"
+          }
+        ]
+      }
+    }
+  }
+}

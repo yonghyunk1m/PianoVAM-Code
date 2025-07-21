@@ -382,34 +382,76 @@ class SmallDataBenchmark:
     THRESHOLD_METHOD = 'midi_based'  # 'statistical', 'clustering', 'valley', 'midi_based'
     FALLBACK_THRESHOLD = 0.9  # 자동 계산 실패 시 기본값
     
+    # 비디오 처리 설정
+    TARGET_VIDEO_DIR = "/home/jhbae/PianoVAM-Code/FingeringDetection/videocapture"
+    MAX_VIDEOS = 5  # 처리할 비디오 개수 제한
+    FIXED_THRESHOLD = 0.9  # 고정 임계값
+    
     def __init__(self):
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.video_capture_dir = os.path.join(self.script_dir, 'videocapture')
-        self.target_video = "2024-02-14_19-10-09"
+        self.video_capture_dir = self.TARGET_VIDEO_DIR  # 새로운 디렉토리 사용
+        self.target_videos = []  # 처리할 비디오 목록
+        self.current_video = None  # 현재 처리 중인 비디오
         self.quick_test = self.QUICK_TEST
         self.frame_limit = self.FRAME_LIMIT
         self.enable_caching = self.ENABLE_CACHING
         self.enable_landmark_caching = self.ENABLE_LANDMARK_CACHING
         self.generate_detailed_video = self.GENERATE_DETAILED_VIDEO
         
-        # 자동 임계값 설정
-        self.auto_threshold = self.AUTO_THRESHOLD
+        # 고정 임계값 설정 (자동 임계값 비활성화)
+        self.auto_threshold = False  # 자동 임계값 비활성화
         self.threshold_method = self.THRESHOLD_METHOD
-        self.fallback_threshold = self.FALLBACK_THRESHOLD
+        self.fallback_threshold = self.FIXED_THRESHOLD  # 0.9로 고정
         
         # 임계값 캐싱 (한 번 계산된 임계값 재사용)
-        self.cached_threshold = None
+        self.cached_threshold = {'Left': self.FIXED_THRESHOLD, 'Right': self.FIXED_THRESHOLD}
+        
+        # 처리할 비디오 목록 초기화
+        self._initialize_video_list()
         
         # 캐싱 경로 설정
         self.cache_dir = os.path.join(self.script_dir, 'cache')
-        self.limited_video_path = os.path.join(self.cache_dir, f"{self.target_video}_limit{self.frame_limit}.mp4")
-        self.cache_data_dir = os.path.join(self.cache_dir, f"{self.target_video}_limit{self.frame_limit}_data")
-        
-        # Landmark 캐싱 경로 설정
-        self.landmark_cache_path = os.path.join(self.cache_dir, f"landmarks_{self.target_video}_limit{self.frame_limit}.pkl")
         
         # 캐시 디렉토리 생성
         os.makedirs(self.cache_dir, exist_ok=True)
+        
+    def _initialize_video_list(self):
+        """처리 가능한 비디오 목록을 초기화합니다"""
+        if not os.path.exists(self.video_capture_dir):
+            print(f"❌ 비디오 디렉토리가 존재하지 않습니다: {self.video_capture_dir}")
+            return
+        
+        # .mp4 파일과 대응되는 데이터가 있는 비디오들을 찾기
+        for item in os.listdir(self.video_capture_dir):
+            if item.endswith('.mp4'):
+                video_name = item[:-4]
+                
+                # 해당 pkl 데이터가 있는지 확인
+                data_dir = os.path.join(self.video_capture_dir, f"{video_name}_858550")
+                if os.path.exists(data_dir):
+                    handlist_file = os.path.join(data_dir, f"handlist_{video_name}_858550.pkl")
+                    floating_file = os.path.join(data_dir, f"floatingframes_{video_name}_858550.pkl")
+                    
+                    if os.path.exists(handlist_file) and os.path.exists(floating_file):
+                        self.target_videos.append(video_name)
+        
+        # MAX_VIDEOS 제한 적용
+        if len(self.target_videos) > self.MAX_VIDEOS:
+            self.target_videos = self.target_videos[:self.MAX_VIDEOS]
+        
+        print(f"📊 처리 대상 비디오: {len(self.target_videos)}개")
+        for i, video in enumerate(self.target_videos, 1):
+            print(f"   {i}. {video}")
+    
+    def set_current_video(self, video_name: str):
+        """현재 처리할 비디오를 설정합니다"""
+        self.current_video = video_name
+        self.target_video = video_name  # 기존 코드 호환성
+        
+        # 캐싱 경로 업데이트
+        self.limited_video_path = os.path.join(self.cache_dir, f"{video_name}_limit{self.frame_limit}.mp4")
+        self.cache_data_dir = os.path.join(self.cache_dir, f"{video_name}_limit{self.frame_limit}_data")
+        self.landmark_cache_path = os.path.join(self.cache_dir, f"landmarks_{video_name}_limit{self.frame_limit}.pkl")
     
     def check_landmark_cache(self, video_path: str) -> bool:
         """Landmark 캐시가 유효한지 확인"""
@@ -2595,77 +2637,65 @@ class SmallDataBenchmark:
                       f" 차이={mismatch['depth_diff']:.3f}{boundary_marker}")
 
 
-def main():
-    """메인 실행 함수"""
-    try:
-        benchmark = SmallDataBenchmark()
+def process_multiple_videos():
+    """여러 비디오를 순차적으로 처리하는 메인 함수"""
+    benchmark = SmallDataBenchmark()
+    
+    if not benchmark.target_videos:
+        print("❌ 처리할 비디오가 없습니다.")
+        return
+    
+    all_results = []
+    
+    for i, video_name in enumerate(benchmark.target_videos, 1):
+        print(f"\n{'='*80}")
+        print(f"🎬 [{i}/{len(benchmark.target_videos)}] 비디오 처리 중: {video_name}")
+        print(f"   임계값: {benchmark.FIXED_THRESHOLD}")
+        print(f"{'='*80}")
         
-        results = benchmark.run_benchmark()
-        benchmark.print_summary(results)
+        # 현재 비디오 설정
+        benchmark.set_current_video(video_name)
         
-        # 결과 저장 (JSON 직렬화 가능한 형태로 변환)
-        suffix = f"_quick{benchmark.frame_limit}" if benchmark.quick_test else ""
-        cache_suffix = "_cached" if benchmark.quick_test and benchmark.enable_caching else ""
-        result_file = f"benchmark_result_{benchmark.target_video}{suffix}{cache_suffix}.json"
+        try:
+            # 벤치마크 실행
+            results = benchmark.run_benchmark()
+            
+            if results:
+                all_results.append({
+                    'video_name': video_name,
+                    'results': results
+                })
+                
+                # 개별 결과 요약 출력
+                print(f"\n✅ [{i}/{len(benchmark.target_videos)}] 완료: {video_name}")
+                benchmark.print_summary(results)
+                
+        except Exception as e:
+            print(f"❌ [{i}/{len(benchmark.target_videos)}] 실패: {video_name}")
+            print(f"   오류: {str(e)}")
+            continue
+    
+    # 전체 결과 요약
+    print(f"\n{'='*80}")
+    print(f"🎯 전체 처리 완료!")
+    print(f"   성공: {len(all_results)}/{len(benchmark.target_videos)}개")
+    print(f"   임계값: {benchmark.FIXED_THRESHOLD}")
+    print(f"{'='*80}")
+    
+    for result in all_results:
+        video_name = result['video_name']
+        res = result['results']
+        print(f"\n📊 {video_name}:")
+        print(f"   SciPy 시간: {res.get('scipy_time', 0):.2f}초")
+        print(f"   PyTorch 시간: {res.get('pytorch_time', 0):.2f}초")
+        print(f"   일치율: {res.get('accuracy', {}).get('overall_accuracy', 0):.1f}%")
         
-        # JSON 직렬화 가능한 형태로 변환
-        serializable_results = benchmark.make_json_serializable(results)
-        
-        with open(result_file, 'w', encoding='utf-8') as f:
-            json.dump(serializable_results, f, indent=2, ensure_ascii=False)
-        print(f"\n💾 결과 저장: {result_file}")
-        
-        # 최종 파일 정보 출력
-        if results.get('comparison_video_detailed'):
-            video_path = results['comparison_video_detailed']
-            if os.path.exists(video_path):
-                file_size = os.path.getsize(video_path) / 1024 / 1024
-                print(f"\n🎬 최종 비디오 정보:")
-                print(f"   📁 파일: {video_path}")
-                print(f"   📊 크기: {file_size:.1f}MB")
-                if "h264" in video_path:
-                    print(f"   🎵 오디오: 포함 (원본 비디오 사운드)")
-                    print(f"   🎬 코덱: H.264 (VSCode 최적 호환성)")
-                    print(f"   💻 VSCode에서 바로 재생 가능")
-                elif "with_audio" in video_path:
-                    print(f"   🎵 오디오: 포함 (원본 비디오 사운드)")
-                    print(f"   ⚠️  H.264 변환 실패: 기본 코덱 사용")
-                else:
-                    print(f"   🔇 오디오: 없음")
-        
-    except FileNotFoundError as e:
-        print(f"\n❌ 파일 없음 오류: {e}")
-        print("💡 해결 방법:")
-        print(f"   1. 비디오 파일 확인: ls videocapture/{SmallDataBenchmark().target_video}.mp4")
-        print(f"   2. 키보드 좌표 파일 확인: ls keyboardcoordinateinfo.pkl")
-        
-    except KeyError as e:
-        print(f"\n❌ 키보드 좌표 정보 오류: {e}")
-        print("💡 해결 방법:")
-        print(f"   keyboardcoordinateinfo.pkl에 '{SmallDataBenchmark().target_video}' 정보를 추가하세요.")
-        
-    except ImportError as e:
-        print(f"\n❌ 모듈 import 오류: {e}")
-        print("💡 해결 방법:")
-        print(f"   1. 필요한 모듈 설치: pip install opencv-python mediapipe torch")
-        print(f"   2. 파일 존재 확인: ls floatinghands_*.py main_loop.py")
-        
-    except RuntimeError as e:
-        print(f"\n❌ 실행 오류: {e}")
-        print("💡 해결 방법:")
-        print(f"   1. GPU/CUDA 드라이버 확인")
-        print(f"   2. MediaPipe 모델 파일 확인: ls hand_landmarker.task")
-        
-    except Exception as e:
-        print(f"\n❌ 예상치 못한 오류: {e}")
-        print("💡 문제가 지속되면 다음을 확인해주세요:")
-        print(f"   1. Python 환경: {sys.version}")
-        print(f"   2. 작업 디렉토리: {os.getcwd()}")
-        print(f"   3. 디스크 용량 확인")
-        print("\n📋 상세 오류 정보:")
-        import traceback
-        traceback.print_exc()
-
+        if res.get('video_generated'):
+            print(f"   비디오: {res.get('output_video_path', '생성됨')}")
 
 if __name__ == "__main__":
-    main() 
+    print("🚀 PianoVAM Floating Hand Detection 벤치마크")
+    print("=" * 60)
+    
+    # 여러 비디오 처리 실행
+    process_multiple_videos() 
