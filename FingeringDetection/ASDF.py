@@ -1737,10 +1737,10 @@ page_names_to_funcs = {
     "Intro": intro,
     "Delete smart tempo": preprocess,
     "Generate mediapipe data" : videodata, 
-    "Pre-finger labeling": prefinger,   
-    "Label": label,
+    "Pre-labeling": prefinger,   
+    "Labeling": label,
     "Groundtruth annotation": annotate,
-    "Keyboard keystone collection": keyboardcoordinate,
+    "Keyboard detection": keyboardcoordinate,
 }
 
 demo_name = st.sidebar.selectbox("**MENU** 🍽️", page_names_to_funcs.keys())
