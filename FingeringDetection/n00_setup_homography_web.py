@@ -45,7 +45,7 @@ class PixelCoordinateCollector:
     
     def get_guide_path(self):
         """현재 선택된 guide 이미지 경로 반환"""
-        return f"/home/jhbae/pianomime/data/{self.current_guide}.png"
+        return f"/guide/{self.current_guide}.png"
 
 # 전역 설정 객체
 pixel_collector = None
