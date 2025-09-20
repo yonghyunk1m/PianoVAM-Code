@@ -13,7 +13,7 @@ from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 import cv2
-from stqdm import stqdm
+from tqdm import tqdm
 import math
 import torch
 import torch.nn as nn
@@ -245,7 +245,7 @@ def landmarkangle(landmarka, landmarkb, landmarkc):
 
     return theta_degrees, area
 
-def torch_polygon_area(vertices):
+def torch_polygon_area(vertices, device):
     """Calculate polygon area using PyTorch - 과학적 정밀도"""
     vertices = torch.tensor(vertices, dtype=torch.float64, device=device)  # float32 → float64
     n = vertices.shape[0]
@@ -259,7 +259,7 @@ def torch_polygon_area(vertices):
     area = 0.5 * torch.abs(torch.sum(x * y_shifted - x_shifted * y))
     return area.item()
 
-def modelskeleton(handlist):
+def modelskeleton(handlist, device):
     """Create hand model skeleton - pure PyTorch implementation"""
     print("? Creating hand skeleton model with PyTorch...")
     
@@ -282,7 +282,7 @@ def modelskeleton(handlist):
                     [hand.handlandmark[16].x, hand.handlandmark[16].y],
                     [hand.handlandmark[20].x, hand.handlandmark[20].y],
                 ]
-                hexagon_area = torch_polygon_area(hexagon_vertices)
+                hexagon_area = torch_polygon_area(hexagon_vertices, device)
                 
                 lhangledifflist.append([
                     hand.handtype,
@@ -307,7 +307,7 @@ def modelskeleton(handlist):
                     [hand.handlandmark[16].x, hand.handlandmark[16].y],
                     [hand.handlandmark[20].x, hand.handlandmark[20].y],
                 ]
-                hexagon_area = torch_polygon_area(hexagon_vertices)
+                hexagon_area = torch_polygon_area(hexagon_vertices, device)
                 
                 rhangledifflist.append([
                     hand.handtype,
@@ -319,19 +319,31 @@ def modelskeleton(handlist):
                 ])
 
     # Filter and select model - same logic as original
-    lhatop10 = sorted(lhangledifflist, key=lambda x: x[1])[:round(0.1*len(lhangledifflist))]
-    lhwtop50 = sorted(lhatop10, key=lambda x: -x[3]/x[2])[:round(0.5*len(lhatop10))]
-    lhmodel = sorted(lhwtop50, key=lambda x: x[2])[int(len(lhwtop50)*0.5)][4]
-    print(f"lhmodel={sorted(lhwtop50, key=lambda x: x[2])[int(len(lhwtop50)*0.5)][5]}")
+    lhmodel = None # Initialize to None
+    if lhangledifflist:
+        lhatop10 = sorted(lhangledifflist, key=lambda x: x[1])[:round(0.1*len(lhangledifflist))]
+        if lhatop10:
+            lhwtop50 = sorted(lhatop10, key=lambda x: -x[3]/x[2])[:round(0.5*len(lhatop10))]
+            # --- Safety Check ---
+            # Ensure the list is not empty before accessing an index
+            if lhwtop50:
+                lhmodel = sorted(lhwtop50, key=lambda x: x[2])[int(len(lhwtop50)*0.5)][4]
+                print(f"lhmodel frame={sorted(lhwtop50, key=lambda x: x[2])[int(len(lhwtop50)*0.5)][5]}")
 
-    rhatop10 = sorted(rhangledifflist, key=lambda x: x[1])[:round(0.1*len(rhangledifflist))]
-    rhwtop50 = sorted(rhatop10, key=lambda x: -x[3]/x[2])[:round(0.5*len(rhatop10))]
-    rhmodel = sorted(rhwtop50, key=lambda x: x[2])[int(len(rhwtop50)*0.5)][4]
-    print(f"rhmodel={sorted(rhwtop50, key=lambda x: x[2])[int(len(rhwtop50)*0.5)][5]}")
-    
+    rhmodel = None # Initialize to None
+    if rhangledifflist:
+        rhatop10 = sorted(rhangledifflist, key=lambda x: x[1])[:round(0.1*len(rhangledifflist))]
+        if rhatop10:
+            rhwtop50 = sorted(rhatop10, key=lambda x: -x[3]/x[2])[:round(0.5*len(rhatop10))]
+            # --- Safety Check ---
+            # Ensure the list is not empty before accessing an index
+            if rhwtop50:
+                rhmodel = sorted(rhwtop50, key=lambda x: x[2])[int(len(rhwtop50)*0.5)][4]
+                print(f"rhmodel frame={sorted(rhwtop50, key=lambda x: x[2])[int(len(rhwtop50)*0.5)][5]}")
+
     return lhmodel, rhmodel
 
-def torch_solve_nonlinear_system(w, i, r, lhmodel, rhmodel, ratio):
+def torch_solve_nonlinear_system(w, i, r, lhmodel, rhmodel, ratio, device):
     """
     수학적으로 올바른 Newton-Raphson 방법 구현
     - SciPy와 동일한 정밀도 달성
@@ -413,7 +425,7 @@ def torch_solve_nonlinear_system(w, i, r, lhmodel, rhmodel, ratio):
     
     return variables[0].item(), variables[1].item(), variables[2].item()
 
-def torch_solve_vectorized_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio):
+def torch_solve_vectorized_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio, device):
     """
     벡터화된 Newton-Raphson 방법 (과학적 정밀도)
     - 각 샘플에 대해 정확한 Newton-Raphson 적용
@@ -446,7 +458,7 @@ def torch_solve_vectorized_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ra
         for j in range(len(w_chunk)):
             try:
                 t, u, v = torch_solve_nonlinear_system(
-                    w_chunk[j], i_chunk[j], r_chunk[j], lhmodel, rhmodel, ratio
+                    w_chunk[j], i_chunk[j], r_chunk[j], lhmodel, rhmodel, ratio, device
                 )
                 chunk_results_t.append(t)
                 chunk_results_u.append(u)
@@ -464,10 +476,10 @@ def torch_solve_vectorized_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ra
     
     return np.array(results_t), np.array(results_u), np.array(results_v)
 
-def calcdepth_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio):
+def calcdepth_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio, device):
     """효율적인 배치 단위 깊이 계산"""
     try:
-        t_batch, u_batch, v_batch = torch_solve_vectorized_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio)
+        t_batch, u_batch, v_batch = torch_solve_vectorized_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio, device)
         return (t_batch + u_batch + v_batch) / 3
     except Exception as e:
         print(f"배치 처리 중 오류: {e}")
@@ -476,7 +488,7 @@ def calcdepth_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio):
 def calcdepth(w, i, r, lhmodel, rhmodel, ratio):
     """Calculate depth using PyTorch optimization - replaces scipy.fsolve"""
     try:
-        t, u, v = torch_solve_nonlinear_system(w, i, r, lhmodel, rhmodel, ratio)
+        t, u, v = torch_solve_nonlinear_system(w, i, r, lhmodel, rhmodel, ratio, device)
         return (t + u + v) / 3
     except:
         return 1.0  # Default fallback
@@ -495,9 +507,9 @@ def faultyframes(handlist):
                 temphandlist.append(hand.handtype)
     return faultyframes
 
-def depthlist(handlist, lhmodel, rhmodel, ratio):
+def depthlist(handlist, lhmodel, rhmodel, ratio, device):
     """과학적 정밀도 PyTorch 깊이 계산 - Newton-Raphson 방법"""
-    print("🔬 과학적 정밀도 PyTorch 깊이 계산 시작 (Newton-Raphson)...")
+    print(f"🔬 [Device: {device}] 과학적 정밀도 PyTorch 깊이 계산 시작 (Newton-Raphson)...")
     
     # 데이터 추출 (한 번만)
     all_coords = []
@@ -517,7 +529,10 @@ def depthlist(handlist, lhmodel, rhmodel, ratio):
     
     # 배치 크기를 정밀도 우선으로 조정 (메모리 효율성 보다는 정확성 우선)
     total_hands = len(all_coords)
-    available_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3) if torch.cuda.is_available() else 4
+    if device.type == 'cuda':
+        available_memory_gb = torch.cuda.get_device_properties(device).total_memory / (1024**3)
+    else:
+        available_memory_gb = 4 # Assume 4GB for CPU
     
     # 정밀도 우선 배치 크기 (더 작은 배치로 안정성 확보)
     if available_memory_gb >= 20:  # 20GB 이상
@@ -537,7 +552,7 @@ def depthlist(handlist, lhmodel, rhmodel, ratio):
     # 스트리밍 처리로 메모리 효율성 극대화
     all_depths = []
     
-    for i in stqdm(range(0, total_hands, chunk_size), desc="🔬 Newton-Raphson 정밀 계산"):
+    for i in tqdm(range(0, total_hands, chunk_size), desc=f"🔬 [Device: {device}] Newton-Raphson 정밀 계산"):
         chunk_coords = all_coords[i:i+chunk_size]
         
         # 배치 데이터 준비
@@ -546,7 +561,7 @@ def depthlist(handlist, lhmodel, rhmodel, ratio):
         r_batch = [coord[2] for coord in chunk_coords]
         
         # 과학적 정밀도 배치 처리
-        depths = calcdepth_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio)
+        depths = calcdepth_batch(w_batch, i_batch, r_batch, lhmodel, rhmodel, ratio, device)
         all_depths.extend(depths)
     
     # 결과 할당
@@ -555,63 +570,60 @@ def depthlist(handlist, lhmodel, rhmodel, ratio):
     
     print(f"✅ 과학적 정밀도 처리 완료: {total_hands:,}개 손 처리됨")
     print(f"   🎯 SciPy와 동일한 수학적 정밀도 달성")
+    
+    return handlist
 
 def mymetric(handlist, handtype, frame, frame_count, a, c, faultyframes, lhmodel, rhmodel, ratio):
-    """Calculate metric for floating detection - 배치 최적화된 버전"""
-    framerange = [*range(int(max(0, frame - a)), int(min(frame + a, frame_count)))]
-    l = len(framerange)
-    tempframes = []
-    availableframes = []
-    templist = []
+    """Calculate metric for floating detection - Corrected and Optimized Logic"""
+    framerange = range(int(max(0, frame - a)), int(min(frame + a, frame_count)))
+    
     thehand = None
+    # Find the specific hand object for the current frame being analyzed
+    # handlist[frame] directly accesses the list of hands for the current frame.
+    for hand_in_frame in handlist[frame]:
+        if hand_in_frame.handtype == handtype:
+            thehand = hand_in_frame
+            break
+            
+    # If the hand to be analyzed doesn't exist in the current frame, return a default value
+    if thehand is None:
+        return 1.0
+
+    thehanddepth = thehand.handdepth
     value = 0
     counter = 0
+
+    # Create a map of {frame_number: depth} for relevant hands in the surrounding frames.
+    # This is efficient as it avoids iterating through the whole handlist repeatedly.
+    depth_map = {}
+    for i in framerange:
+        if i not in faultyframes:
+            # handlist[i] gives direct access to the hands in frame i
+            for hand_in_frame in handlist[i]:
+                if hand_in_frame.handtype == handtype:
+                    depth_map[i] = hand_in_frame.handdepth
+                    # Assuming max one hand of each type per frame, so we can break
+                    break
     
-    for hands in handlist:
-        for hand in hands:
-            if hand.handframe in framerange:
-                if hand.handtype == handtype:
-                    tempframes.append(hand.handframe)
-            if hand.handframe == frame:
-                if hand.handtype == handtype:
-                    thehand = hand 
-                    
-    for frames in tempframes:
-        if frames not in faultyframes:
-            availableframes.append(frames)
-    
-    if thehand is None:
-        return 1.0  # Default value
-    
-    # ✅ 개별 GPU 호출 제거 - 이미 계산된 값 사용
-    thehanddepth = thehand.handdepth  # 이미 depthlist()에서 배치 계산됨
-    
-    for hands in handlist:
-        for hand in hands:
-            templist = [*range(int(max(0, frame - a)), int(min(frame + a, frame_count)))]
-            if hand.handframe in framerange: 
-                depth = hand.handdepth
-                if hand.handtype == handtype:
-                    for availableframe in availableframes:
-                        if availableframe < frame:
-                            value += depth * (a - frame + availableframe)
-                            counter += a - frame + availableframe
-                            templist.remove(availableframe)
-                        else:
-                            value += depth * (a + frame - availableframe)
-                            counter += a + frame - availableframe
-                            templist.remove(availableframe)
-                    for leftframe in templist:
-                        if leftframe < frame:
-                            value += thehanddepth * (a - frame + leftframe)
-                            counter += a - frame + leftframe
-                        else:
-                            value += thehanddepth * (a + frame - leftframe)
-                            counter += a + frame - leftframe
-    
+    # Calculate the weighted average depth across the surrounding frames (the framerange)
+    for i in framerange:
+        # Use the depth from a nearby detected hand if one exists in the map.
+        # Otherwise, fallback to using the depth of the current hand being analyzed.
+        depth = depth_map.get(i, thehanddepth)
+        
+        # Calculate the weight based on distance from the current frame (triangular window)
+        if i < frame:
+            weight = a - frame + i
+        else:
+            weight = a + frame - i
+        
+        value += depth * weight
+        counter += weight
+
     if counter > 0:
         value /= counter
     
+    # Return the final metric, a combination of the hand's own depth and the contextual average depth
     return ((c * thehanddepth) + (1 - c) * value)
 
 def detectfloatingframes(handlist, frame_count, faultyframes, lhmodel, rhmodel, ratio, threshold=0.9):
@@ -622,7 +634,7 @@ def detectfloatingframes(handlist, frame_count, faultyframes, lhmodel, rhmodel, 
     floatingframes = []
     index = 0
     
-    for _ in stqdm(range(len(handlist)), desc="Detecting floating hands..."):
+    for _ in tqdm(range(len(handlist)), desc="Detecting floating hands..."):
         handsinfo = handlist[index]
         for hand in handsinfo:
             metric_value = mymetric(
@@ -645,11 +657,10 @@ def detectfloatingframes(handlist, frame_count, faultyframes, lhmodel, rhmodel, 
         index += 1
     
     for metric in metriclist:
-        # 고정 임계값 0.9 사용
-        current_threshold = 0.9
+
         
         # floating 판정: 깊이 값이 임계값보다 작거나 같으면 floating (화면에서 가까운 손이 더 작은 값을 가짐)
-        if metric[2] <= current_threshold:
+        if metric[2] <= threshold:
             floatingframes.append([metric[0], metric[1], metric[2], 'floating'])
         else: 
             floatingframes.append([metric[0], metric[1], metric[2], 'notfloating'])
@@ -749,6 +760,7 @@ def generate_keyboard_from_keystone_points(keystone_points):
             print(f"🔧 Key {i}: {left_edge}~{right_edge}, weight={weight:.3f}, coords=({top_x:.4f},{top_y:.4f})")
     
     return bottompoints, toppoints
+
 
 def create_interpolation_functions(keystone_points):
     """Create edge-wise interpolation coordinates for black key generation"""
@@ -1268,7 +1280,7 @@ def load_keystone_data_from_json(json_file_path):
             middle_idx = 14 + i
             keystone_coords[f"{name}_middle"] = normalized_points[middle_idx]
             print(f"   🎵 Added meeting point: {name}")
-        
+        '''
         # **INTELLIGENT INTERPOLATION**: Generate missing C3 and C7 with better accuracy
         # Use the piano's logarithmic frequency spacing instead of simple linear interpolation
         
@@ -1326,7 +1338,7 @@ def load_keystone_data_from_json(json_file_path):
         
         if missing_keystones:
             raise ValueError(f"Missing keystones after conversion: {missing_keystones}")
-        
+        '''
         print(f"   ✅ Successfully loaded {len(keystone_coords)} keystone coordinates")
         print(f"   🎹 Ready for keystone-wise interpolation (A0~C1~C2~...~C8)")
         
