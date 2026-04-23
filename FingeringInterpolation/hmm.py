@@ -197,6 +197,90 @@ def compute_entropy(posterior: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# 1st-order HMM (used for entropy / model-recommended selection)
+# Paper: "運指の不定性の評価には1次のHMMを用いる"
+# (For entropy estimation, use 1st-order HMM)
+# ---------------------------------------------------------------------------
+
+def train_hmm_1st(pieces: list[list[tuple[int, int]]]) -> dict:
+    """
+    Train 1st-order HMM. Same interface as train_hmm but with
+    trans shape (5, 5): P(fn | fn-1).
+    """
+    trans = np.zeros((N_FINGERS, N_FINGERS)) + EPS
+    emit  = np.zeros((N_FINGERS, N_PITCHES)) + EPS
+    init  = np.zeros(N_FINGERS) + EPS
+
+    for piece in pieces:
+        if not piece:
+            continue
+        pitches = [p for p, _ in piece]
+        fingers = [f - 1 for _, f in piece]
+
+        init[fingers[0]] += 1
+        for n in range(1, len(fingers)):
+            trans[fingers[n-1], fingers[n]] += 1
+        for pitch, finger in zip(pitches, fingers):
+            emit[finger, pitch] += 1
+
+    trans /= trans.sum(axis=1, keepdims=True)
+    emit  /= emit.sum(axis=1, keepdims=True)
+    init  /= init.sum()
+
+    return {"trans": trans, "emit": emit, "init": init, "order": 1}
+
+
+def forward_backward_1st(
+    pitches: list[int],
+    labels: list[int | None],
+    model: dict,
+) -> np.ndarray:
+    """
+    Forward-backward for 1st-order HMM → posterior shape (N, 5).
+    Used for entropy-based model-recommended note selection.
+    """
+    N = len(pitches)
+    F = N_FINGERS
+    trans = model["trans"]   # (F, F)
+    emit  = model["emit"]    # (F, 128)
+    init  = model["init"]    # (F,)
+
+    def get_emit(n: int, f: int) -> float:
+        if labels[n] is not None:
+            return 1.0 if f == labels[n] - 1 else 0.0
+        return float(emit[f, pitches[n]])
+
+    # Forward
+    alpha = np.zeros((N, F))
+    for f in range(F):
+        alpha[0, f] = init[f] * get_emit(0, f)
+    s = alpha[0].sum()
+    if s > 0:
+        alpha[0] /= s
+
+    for n in range(1, N):
+        for f in range(F):
+            alpha[n, f] = get_emit(n, f) * np.sum(alpha[n-1] * trans[:, f])
+        s = alpha[n].sum()
+        if s > 0:
+            alpha[n] /= s
+
+    # Backward
+    beta = np.ones((N, F))
+    for n in range(N - 2, -1, -1):
+        for f in range(F):
+            beta[n, f] = np.sum(trans[f] * np.array([get_emit(n+1, g) for g in range(F)]) * beta[n+1])
+        s = beta[n].sum()
+        if s > 0:
+            beta[n] /= s
+
+    posterior = alpha * beta
+    row_sums = posterior.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1
+    return posterior / row_sums
+
+
+# ---------------------------------------------------------------------------
 # Model persistence
 # ---------------------------------------------------------------------------
 

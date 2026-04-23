@@ -24,7 +24,6 @@ import os
 import glob
 from pathlib import Path
 
-TEST_COMPOSERS = {"Bach", "Mozart", "Chopin"}
 _HAND_MAP = {"0": "R", "1": "L"}
 
 
@@ -85,21 +84,27 @@ def load_pig_file(path: str) -> dict[str, list[tuple[int, int]]]:
     return result
 
 
-def _load_list(pig_root: str) -> dict[str, str]:
+def _load_list(pig_root: str) -> dict[str, dict]:
     """
-    Load List.csv → {piece_id: composer}.
-    Handles BOM in first column name.
+    Load List.csv → {piece_id: {composer, n_fingering}}.
+    Test set = pieces with #Fingering >= 4 (Bach/Mozart/Chopin sets, 10 each).
+    Train set = pieces with #Fingering < 4 (Miscellaneous, 120 pieces).
+    Note: Miscellaneous set contains some Bach/Mozart/Chopin pieces
+    (different pieces from the test sets), so split must use #Fingering,
+    not composer name. See Saitō & Nakamura 2022, Section 2.2.
     """
     list_path = os.path.join(pig_root, "List.csv")
     if not os.path.exists(list_path):
         return {}
     mapping = {}
-    with open(list_path, encoding="utf-8-sig") as f:  # utf-8-sig strips BOM
+    with open(list_path, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
             pid = row.get("Id", "").strip().zfill(3)
-            composer = row.get("Composer", "").strip()
-            mapping[pid] = composer
+            mapping[pid] = {
+                "composer":    row.get("Composer", "").strip(),
+                "n_fingering": int(row.get("#Fingering", "1")),
+            }
     return mapping
 
 
@@ -140,8 +145,10 @@ def load_pig_split(
         stem = Path(path).stem  # e.g. "001-1_fingering"
         piece_id = stem.split("-")[0].zfill(3)
 
-        composer = piece_composer.get(piece_id, "")
-        is_test  = composer in TEST_COMPOSERS
+        info     = piece_composer.get(piece_id, {})
+        # Test = pieces with ≥4 performers (Bach/Mozart/Chopin sets)
+        # Train = Miscellaneous set (#Fingering < 4)
+        is_test  = info.get("n_fingering", 1) >= 4
 
         if split == "train" and is_test:
             continue

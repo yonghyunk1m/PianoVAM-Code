@@ -1,10 +1,15 @@
 """
 Evaluate HMM fingering completion on PIG test set.
 
-Reproduces Table from Saitō & Nakamura 2022:
+Reproduces results from Saitō & Nakamura 2022:
   - Random selection (avg over 20 seeds)
   - Middle finger only
-  - Model-recommended selection
+  - Middle finger + model-recommended selection (paper's key result, Fig.3(c)(d))
+
+Key corrections vs naive implementation:
+  - Accuracy = over ALL notes (labeled + unlabeled); labeled are correct by construction
+  - Entropy for model-recommended selection uses 1st-order HMM (paper Section 2.3)
+  - Paper target: R=0 ~67%, R=40% random ~88%, middle+model_rec ~94%
 
 Usage:
     python FingeringInterpolation/evaluate.py --pig-root /path/to/PIG
@@ -19,7 +24,9 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_DIR))
 
 from FingeringInterpolation.hmm import (
-    train_hmm, constrained_viterbi, forward_backward, compute_entropy, load_model
+    train_hmm, train_hmm_1st,
+    constrained_viterbi, forward_backward_1st, compute_entropy,
+    load_model, save_model,
 )
 from FingeringInterpolation.pig_loader import load_pig_split
 
@@ -31,11 +38,8 @@ from FingeringInterpolation.pig_loader import load_pig_split
 def random_selection(n: int, ratio: float, true_fingers: list[int], seed: int) -> list:
     rng = random.Random(seed)
     k = int(n * ratio)
-    indices = rng.sample(range(n), k)
-    labels = [None] * n
-    for i in indices:
-        labels[i] = true_fingers[i]
-    return labels
+    indices = set(rng.sample(range(n), k))
+    return [true_fingers[i] if i in indices else None for i in range(n)]
 
 
 def specific_finger_selection(true_fingers: list[int], target: set[int]) -> list:
@@ -45,17 +49,21 @@ def specific_finger_selection(true_fingers: list[int], target: set[int]) -> list
 def model_recommended_selection(
     pitches: list[int],
     base_labels: list,
-    model: dict,
+    model_1st: dict,
     n_additional: int,
     true_fingers: list[int],
 ) -> list:
+    """
+    Select additional notes by highest entropy under 1st-order HMM.
+    Paper: "運指の不定性の評価には1次のHMMを用いる"
+    """
     if n_additional <= 0:
         return list(base_labels)
-    posterior = forward_backward(pitches, base_labels, model)
+    posterior = forward_backward_1st(pitches, base_labels, model_1st)
     entropy   = compute_entropy(posterior)
     for i, l in enumerate(base_labels):
         if l is not None:
-            entropy[i] = -1.0
+            entropy[i] = -1.0  # already labeled — exclude
     top_indices = np.argsort(entropy)[::-1][:n_additional]
     new_labels = list(base_labels)
     for i in top_indices:
@@ -64,26 +72,27 @@ def model_recommended_selection(
 
 
 # ---------------------------------------------------------------------------
-# Evaluation
+# Evaluation (paper definition: accuracy over ALL notes)
 # ---------------------------------------------------------------------------
 
 def evaluate_pieces(
     pieces: list[list[tuple[int, int]]],
-    model: dict,
+    model_2nd: dict,
+    model_1st: dict,
     strategy: str,
     ratio: float = 0.5,
     n_seeds: int = 20,
     target_fingers: set[int] | None = None,
-) -> float:
-    """Evaluate accuracy on unlabeled notes."""
-    total_correct = 0
-    total_notes   = 0
+) -> tuple[float, float]:
+    """
+    Returns (accuracy_all_notes, labeling_ratio_actual).
+    accuracy_all_notes: paper's definition — labeled notes trivially correct.
+    """
+    total_correct = total_notes = total_labeled = 0
 
     seeds = list(range(n_seeds)) if strategy == "random" else [0]
 
     for seed in seeds:
-        seed_correct = 0
-        seed_total   = 0
         for piece in pieces:
             pitches      = [p for p, _ in piece]
             true_fingers = [f for _, f in piece]
@@ -92,68 +101,93 @@ def evaluate_pieces(
             if strategy == "random":
                 labels = random_selection(n, ratio, true_fingers, seed)
             elif strategy == "specific":
-                tgt = target_fingers or {3}
+                tgt    = target_fingers or {3}
                 labels = specific_finger_selection(true_fingers, tgt)
             elif strategy == "model_rec":
+                # Start from unlabeled, model selects which to label
+                base  = [None] * n
+                n_add = int(n * ratio)
+                labels = model_recommended_selection(
+                    pitches, base, model_1st, n_add, true_fingers)
+            elif strategy == "middle_then_rec":
+                # Paper Fig.3(c)(d): label middle finger first, then model-rec
                 base  = specific_finger_selection(true_fingers, {3})
-                n_add = max(0, int(n * ratio) - sum(l is not None for l in base))
-                labels = model_recommended_selection(pitches, base, model, n_add, true_fingers)
+                n_base = sum(l is not None for l in base)
+                n_add  = max(0, int(n * ratio) - n_base)
+                labels = model_recommended_selection(
+                    pitches, base, model_1st, n_add, true_fingers)
             else:
                 raise ValueError(f"Unknown strategy: {strategy}")
 
-            predicted = constrained_viterbi(pitches, labels, model)
+            predicted = constrained_viterbi(pitches, labels, model_2nd)
 
-            for pred, true, label in zip(predicted, true_fingers, labels):
-                if label is None:
-                    seed_correct += int(pred == true)
-                    seed_total   += 1
+            # Paper: accuracy over ALL notes (labeled trivially correct)
+            for pred, true in zip(predicted, true_fingers):
+                total_correct += int(pred == true)
+                total_notes   += 1
+            total_labeled += sum(l is not None for l in labels)
 
-        total_correct += seed_correct
-        total_notes   += seed_total
+    acc   = total_correct / total_notes if total_notes > 0 else 0.0
+    r_act = total_labeled / total_notes if total_notes > 0 else 0.0
+    return acc, r_act
 
-    return total_correct / total_notes if total_notes > 0 else 0.0
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate HMM on PIG test set")
     parser.add_argument("--pig-root", required=True)
     parser.add_argument("--model-dir", default=os.path.join(_DIR, "models"))
-    parser.add_argument("--ratio", type=float, default=0.5,
-                        help="Labeling ratio for random/model-rec strategies")
-    parser.add_argument("--seeds", type=int, default=20,
-                        help="Random seeds for averaging (random strategy)")
+    parser.add_argument("--ratio", type=float, default=0.5)
+    parser.add_argument("--seeds", type=int, default=20)
     args = parser.parse_args()
 
-    print("Loading PIG test split...")
-    test_data = load_pig_split(args.pig_root, split="test")
+    print("Loading PIG test/train splits...")
+    test_data  = load_pig_split(args.pig_root, split="test")
+    train_data = load_pig_split(args.pig_root, split="train")
 
     results = {}
     for hand in ("R", "L"):
-        pieces = test_data[hand]
-        if not pieces:
-            print(f"  No {hand}-hand test pieces found.")
+        pieces_test = test_data[hand]
+        if not pieces_test:
             continue
 
-        model_path = os.path.join(args.model_dir, f"hmm_{hand}.npz")
-        if not os.path.exists(model_path):
-            print(f"  [WARN] Model not found: {model_path} — run train.py first")
-            continue
-        model = load_model(model_path)
+        model_2nd_path = os.path.join(args.model_dir, f"hmm_{hand}.npz")
+        model_1st_path = os.path.join(args.model_dir, f"hmm1st_{hand}.npz")
 
-        print(f"\n=== {hand} hand ({len(pieces)} test pieces) ===")
+        if not os.path.exists(model_2nd_path):
+            print(f"  [WARN] 2nd-order model not found: {model_2nd_path}")
+            continue
+
+        model_2nd = load_model(model_2nd_path)
+
+        # Train 1st-order if not cached
+        if not os.path.exists(model_1st_path):
+            print(f"  Training 1st-order HMM for {hand} hand...")
+            m1 = train_hmm_1st(train_data[hand])
+            save_model(m1, model_1st_path)
+        model_1st = load_model(model_1st_path)
+
+        print(f"\n=== {hand} hand ({len(pieces_test)} test sequences) ===")
         strategies = [
-            ("Random 50%",       "random",    {"ratio": args.ratio, "n_seeds": args.seeds}),
-            ("Middle finger",    "specific",  {"target_fingers": {3}}),
-            ("Mid+ModelRec 50%", "model_rec", {"ratio": args.ratio}),
+            ("R=0 (no labels)",      "random",         {"ratio": 0.0,        "n_seeds": 1}),
+            ("Random 40%",           "random",          {"ratio": 0.4,        "n_seeds": args.seeds}),
+            ("Random 50%",           "random",          {"ratio": args.ratio, "n_seeds": args.seeds}),
+            ("Middle finger only",   "specific",        {"target_fingers": {3}}),
+            ("Model-rec 50%",        "model_rec",       {"ratio": args.ratio}),
+            ("Middle+ModelRec 50%",  "middle_then_rec", {"ratio": args.ratio}),
         ]
         for name, strat, kwargs in strategies:
-            acc = evaluate_pieces(pieces, model, strategy=strat, **kwargs)
-            print(f"  {name:25s}: {acc*100:.2f}%")
+            acc, r_act = evaluate_pieces(
+                pieces_test, model_2nd, model_1st, strategy=strat, **kwargs)
+            print(f"  {name:25s}: A={acc*100:.1f}%  R={r_act*100:.1f}%")
             results[f"{hand}_{strat}"] = acc
 
-    print("\n--- Summary ---")
+    print("\n--- Summary (paper targets: R=40% random ~88%, middle+rec ~94%) ---")
     for k, v in results.items():
-        print(f"  {k}: {v*100:.2f}%")
+        print(f"  {k}: {v*100:.1f}%")
 
 
 if __name__ == "__main__":
