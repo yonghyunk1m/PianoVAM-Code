@@ -167,58 +167,6 @@ def rule_fast_jump(
     return flags
 
 
-# ===========================================================================
-# RULE 3  — Fast phrase (many notes per second)
-# ===========================================================================
-
-def rule_fast_phrase(
-    df: pd.DataFrame,
-    ioi_threshold_ms: float = 1000.0,
-    min_run_length: int = 10,
-) -> pd.Series:
-    """
-    Runs of consecutive notes (per hand) with IOI < threshold.
-    10+ notes each within 1s of the next = sustained fast passage
-    where hand shape is ambiguous in video.
-    Flags the entire run.
-    """
-    flags = pd.Series(False, index=df.index)
-    if "onset" not in df.columns:
-        return flags
-
-    for hand in ("L", "R"):
-        mask = df["hand"] == hand
-        sub  = df[mask]
-        if len(sub) < min_run_length:
-            continue
-
-        onsets = sub["onset"].values * 1000
-        idxs   = list(sub.index)
-        ioi    = np.diff(onsets)
-
-        run_start = None
-        for i, dt in enumerate(ioi):
-            if dt < ioi_threshold_ms:
-                if run_start is None:
-                    run_start = i
-            else:
-                if run_start is not None:
-                    run_end = i  # inclusive
-                    if (run_end - run_start + 1) >= min_run_length:
-                        for j in range(run_start, run_end + 2):
-                            if j < len(idxs):
-                                flags.iloc[idxs[j]] = True
-                    run_start = None
-
-        # Close open run at end
-        if run_start is not None:
-            run_end = len(ioi)
-            if (run_end - run_start + 1) >= min_run_length:
-                for j in range(run_start, min(run_end + 2, len(idxs))):
-                    flags.iloc[idxs[j]] = True
-
-    return flags
-
 
 # ===========================================================================
 # RULE 4  — Hand position overlap
@@ -403,7 +351,6 @@ RULES: dict[str, callable] = {
     "impossible_fingering":       rule_impossible_fingering,
     # MediaPipe unreliable situations
     "fast_jump":                  rule_fast_jump,
-    "fast_phrase":                rule_fast_phrase,
     "hand_overlap":               rule_hand_overlap,
     "rapid_alternation":          rule_rapid_alternation,
     # Data quality / no assignment
@@ -416,7 +363,6 @@ RULES: dict[str, callable] = {
 RULE_DESCRIPTIONS: dict[str, str] = {
     "impossible_fingering":     "Physically impossible: finger cross w/o thumb, or span overreach",
     "fast_jump":                "Fast position jump: hand blurry in video, MediaPipe inaccurate",
-    "fast_phrase":              "Fast phrase (≥10 notes IOI < 1000ms): sustained run, tracking unreliable",
     "hand_overlap":             "Hand position overlap: L/R pitch regions intersect",
     "rapid_alternation":        "Rapid L/R alternation (tremolo): hand identity ambiguous",
     "noinfo":                   "No finger assigned (Noinfo)",
@@ -428,7 +374,6 @@ RULE_DESCRIPTIONS: dict[str, str] = {
 DEFAULT_RULES = [
     "impossible_fingering",
     "fast_jump",
-    "fast_phrase",
     "hand_overlap",
     "noinfo_cluster",
 ]
