@@ -132,7 +132,7 @@ def rule_impossible_fingering(df: pd.DataFrame) -> pd.Series:
 
 def rule_fast_jump(
     df: pd.DataFrame,
-    jump_semitones: int = 10,
+    jump_semitones: int = 15,
     jump_window_ms: float = 180.0,
 ) -> pd.Series:
     """
