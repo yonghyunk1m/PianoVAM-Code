@@ -79,21 +79,27 @@ def train_hmm(pieces: list[list[tuple[int, int]]]) -> dict:
 
 def train_hmm_extended(pieces: list[list[tuple[int, int, float]]]) -> dict:
     """
-    Train extended 2nd-order HMM using pitch interval and IOI.
+    Train extended 2nd-order HMM using absolute pitch, pitch interval, and IOI.
+
+    Emission at note n:
+      n=0 : P(p0 | f0)                                   — absolute pitch only
+      n≥1 : P(pn | fn) × P(Δpn | f_{n-1}, fn) × P(IOI_n | f_{n-1}, fn)
+            absolute pitch × pitch-interval × IOI
+
+    Key: emit_abs is trained on ALL notes (not just first), giving
+    reliable P(pitch | finger) across the full register.
 
     Args:
-        pieces: List of pieces. Each piece is a list of
-                (pitch, finger, onset_time) tuples, finger 1-indexed.
-    Returns:
-        dict with keys:
-            trans       (5, 5, 5) : P(fn | fn-2, fn-1)
-            emit0       (5, 128)  : P(pitch | f) for the first note only
-            init        (5, 5)   : P(f0, f1)
-            pitch_emit  (5, 5, 49): P(Δpitch | f_prev, f_curr)
-            ioi_emit    (5, 5, 4) : P(IOI_bin | f_prev, f_curr)
+        pieces: list of (pitch, finger, onset_time) tuples, finger 1-indexed.
+    Returns dict with:
+        trans       (5, 5, 5) : P(fn | fn-2, fn-1)
+        emit_abs    (5, 128)  : P(pitch | f)  — all notes
+        init        (5, 5)   : P(f0, f1)
+        pitch_emit  (5, 5, 49): P(Δpitch | f_prev, f_curr)
+        ioi_emit    (5, 5, 4) : P(IOI_bin | f_prev, f_curr)
     """
     trans      = np.zeros((N_FINGERS, N_FINGERS, N_FINGERS)) + EPS
-    emit0      = np.zeros((N_FINGERS, N_PITCHES)) + EPS
+    emit_abs   = np.zeros((N_FINGERS, N_PITCHES)) + EPS  # trained on ALL notes
     init       = np.zeros((N_FINGERS, N_FINGERS)) + EPS
     pitch_emit = np.zeros((N_FINGERS, N_FINGERS, N_PITCH_DELTAS)) + EPS
     ioi_emit   = np.zeros((N_FINGERS, N_FINGERS, N_IOI_BINS)) + EPS
@@ -108,7 +114,9 @@ def train_hmm_extended(pieces: list[list[tuple[int, int, float]]]) -> dict:
         if len(fingers) >= 2:
             init[fingers[0], fingers[1]] += 1
 
-        emit0[fingers[0], pitches[0]] += 1
+        # Absolute pitch emission — accumulate for EVERY note
+        for f, p in zip(fingers, pitches):
+            emit_abs[f, p] += 1
 
         for n in range(1, len(fingers)):
             fp = fingers[n - 1]
@@ -122,13 +130,13 @@ def train_hmm_extended(pieces: list[list[tuple[int, int, float]]]) -> dict:
             trans[fingers[n-2], fingers[n-1], fingers[n]] += 1
 
     trans      /= trans.sum(axis=2, keepdims=True)
-    emit0      /= emit0.sum(axis=1, keepdims=True)
+    emit_abs   /= emit_abs.sum(axis=1, keepdims=True)
     init       /= init.sum()
     pitch_emit /= pitch_emit.sum(axis=2, keepdims=True)
     ioi_emit   /= ioi_emit.sum(axis=2, keepdims=True)
 
     return {
-        "trans": trans, "emit0": emit0, "init": init,
+        "trans": trans, "emit_abs": emit_abs, "init": init,
         "pitch_emit": pitch_emit, "ioi_emit": ioi_emit,
         "type": "extended",
     }
@@ -156,7 +164,7 @@ def constrained_viterbi_extended(
         return []
 
     trans      = model["trans"]       # (F, F, F)
-    emit0      = model["emit0"]       # (F, 128)
+    emit_abs   = model["emit_abs"]    # (F, 128) — all notes
     init       = model["init"]        # (F, F)
     pitch_emit = model["pitch_emit"]  # (F, F, 49)
     ioi_emit   = model["ioi_emit"]    # (F, F, 4)
@@ -165,22 +173,23 @@ def constrained_viterbi_extended(
     log_trans      = np.log(trans + EPS)
     log_pitch_emit = np.log(pitch_emit + EPS)
     log_ioi_emit   = np.log(ioi_emit + EPS)
-    log_emit0      = np.log(emit0 + EPS)
+    log_emit_abs   = np.log(emit_abs + EPS)
 
     def log_emit_first(n: int, f: int) -> float:
-        """Emission for position 0 — absolute pitch."""
+        """Position 0: absolute pitch only."""
         if labels[n] is not None:
             return 0.0 if f == labels[n] - 1 else LOG_ZERO
-        return log_emit0[f, pitches[n]]
+        return log_emit_abs[f, pitches[n]]
 
     def log_emit_pair(n: int, fp: int, fc: int) -> float:
-        """Emission for n≥1 — pitch interval + IOI conditioned on (fp, fc)."""
+        """Position n≥1: absolute pitch × pitch-interval × IOI."""
         if labels[n] is not None:
             return 0.0 if fc == labels[n] - 1 else LOG_ZERO
         dp  = pitches[n] - pitches[n - 1]
         ioi = onsets[n]  - onsets[n - 1]
-        return (log_pitch_emit[fp, fc, _pitch_delta_idx(dp)]
-                + log_ioi_emit [fp, fc, _ioi_bin(ioi)])
+        return (log_emit_abs [fc, pitches[n]]
+                + log_pitch_emit[fp, fc, _pitch_delta_idx(dp)]
+                + log_ioi_emit  [fp, fc, _ioi_bin(ioi)])
 
     if N == 1:
         if labels[0] is not None:
@@ -226,7 +235,7 @@ def constrained_viterbi_extended(
 def train_hmm_1st_extended(pieces: list[list[tuple[int, int, float]]]) -> dict:
     """1st-order extended HMM for entropy estimation."""
     trans      = np.zeros((N_FINGERS, N_FINGERS)) + EPS
-    emit0      = np.zeros((N_FINGERS, N_PITCHES)) + EPS
+    emit_abs   = np.zeros((N_FINGERS, N_PITCHES)) + EPS
     init       = np.zeros(N_FINGERS) + EPS
     pitch_emit = np.zeros((N_FINGERS, N_FINGERS, N_PITCH_DELTAS)) + EPS
     ioi_emit   = np.zeros((N_FINGERS, N_FINGERS, N_IOI_BINS)) + EPS
@@ -238,8 +247,9 @@ def train_hmm_1st_extended(pieces: list[list[tuple[int, int, float]]]) -> dict:
         fingers = [f - 1 for _, f, _ in piece]
         onsets  = [t for _, _, t in piece]
 
-        init[fingers[0]]  += 1
-        emit0[fingers[0], pitches[0]] += 1
+        init[fingers[0]] += 1
+        for f, p in zip(fingers, pitches):
+            emit_abs[f, p] += 1
         for n in range(1, len(fingers)):
             fp, fc = fingers[n-1], fingers[n]
             trans[fp, fc] += 1
@@ -249,13 +259,13 @@ def train_hmm_1st_extended(pieces: list[list[tuple[int, int, float]]]) -> dict:
             ioi_emit  [fp, fc, _ioi_bin(ioi)]        += 1
 
     trans      /= trans.sum(axis=1, keepdims=True)
-    emit0      /= emit0.sum(axis=1, keepdims=True)
+    emit_abs   /= emit_abs.sum(axis=1, keepdims=True)
     init       /= init.sum()
     pitch_emit /= pitch_emit.sum(axis=2, keepdims=True)
     ioi_emit   /= ioi_emit.sum(axis=2, keepdims=True)
 
     return {
-        "trans": trans, "emit0": emit0, "init": init,
+        "trans": trans, "emit_abs": emit_abs, "init": init,
         "pitch_emit": pitch_emit, "ioi_emit": ioi_emit,
         "order": 1, "type": "extended",
     }
@@ -271,22 +281,23 @@ def forward_backward_1st_extended(
     N = len(pitches)
     F = N_FINGERS
     trans      = model["trans"]
-    emit0      = model["emit0"]
+    emit_abs   = model["emit_abs"]
     pitch_emit = model["pitch_emit"]
     ioi_emit   = model["ioi_emit"]
 
     def get_emit0(n: int, f: int) -> float:
         if labels[n] is not None:
             return 1.0 if f == labels[n] - 1 else 0.0
-        return float(emit0[f, pitches[n]])
+        return float(emit_abs[f, pitches[n]])
 
     def get_emit_pair(n: int, fp: int, fc: int) -> float:
         if labels[n] is not None:
             return 1.0 if fc == labels[n] - 1 else 0.0
         dp  = pitches[n] - pitches[n - 1]
         ioi = onsets[n]  - onsets[n - 1]
-        return (float(pitch_emit[fp, fc, _pitch_delta_idx(dp)])
-                * float(ioi_emit [fp, fc, _ioi_bin(ioi)]))
+        return (float(emit_abs   [fc, pitches[n]])
+                * float(pitch_emit[fp, fc, _pitch_delta_idx(dp)])
+                * float(ioi_emit  [fp, fc, _ioi_bin(ioi)]))
 
     # alpha[n, f] — marginalised over previous finger
     alpha = np.zeros((N, F))
