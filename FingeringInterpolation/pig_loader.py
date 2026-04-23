@@ -74,12 +74,13 @@ def load_pig_file(path: str) -> dict[str, list[tuple[int, int]]]:
             if not (0 <= pitch <= 127):
                 continue
 
-            notes[hand].append((onset, pitch, finger))
+            notes[hand].append((onset, pitch, finger))  # keep onset for timing
 
     result = {}
     for hand, entries in notes.items():
         entries.sort(key=lambda x: x[0])
-        result[hand] = [(pitch, finger) for _, pitch, finger in entries]
+        # Return (pitch, finger, onset_time) — onset used for IOI computation
+        result[hand] = [(pitch, finger, onset) for onset, pitch, finger in entries]
 
     return result
 

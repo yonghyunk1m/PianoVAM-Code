@@ -1,9 +1,9 @@
 """
-Train 2nd-order HMM on PIG dataset and save model weights.
+Train HMM models on PIG dataset and save weights.
 
 Usage:
     python FingeringInterpolation/train.py --pig-root /path/to/PIG
-    python FingeringInterpolation/train.py --pig-root /path/to/PIG --output models/hmm.npz
+    python FingeringInterpolation/train.py --pig-root /path/to/PIG --no-extended
 """
 import argparse
 import os
@@ -12,54 +12,63 @@ import sys
 _DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_DIR))
 
-from FingeringInterpolation.hmm import train_hmm, save_model
+from FingeringInterpolation.hmm import (
+    train_hmm, train_hmm_extended,
+    train_hmm_1st, train_hmm_1st_extended,
+    save_model,
+)
 from FingeringInterpolation.pig_loader import load_pig_split
 
-DEFAULT_OUTPUT = os.path.join(_DIR, "models", "hmm_{hand}.npz")
-
-
-def train_one_hand(pieces: list, hand: str, output_path: str) -> None:
-    if not pieces:
-        print(f"  [WARN] No {hand}-hand pieces found, skipping.")
-        return
-    print(f"  Training {hand}-hand HMM on {len(pieces)} piece-sequences...")
-    model = train_hmm(pieces)
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    save_model(model, output_path)
-    print(f"  Saved → {output_path}")
-
-    # Quick sanity: show most common finger per pitch range
-    emit = model["emit"]  # (5, 128)
-    top = emit.argmax(axis=0)  # best finger per pitch
-    print(f"  Emission check (most likely finger per octave):")
-    for oct_start in range(21, 109, 12):
-        avg = emit[:, oct_start:oct_start+12].mean(axis=1)
-        print(f"    MIDI {oct_start:3d}-{oct_start+11}: " +
-              " ".join(f"f{i+1}={avg[i]:.3f}" for i in range(5)))
+DEFAULT_MODEL_DIR = os.path.join(_DIR, "models")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train HMM on PIG dataset")
-    parser.add_argument("--pig-root", required=True,
-                        help="Root directory of PIG dataset")
-    parser.add_argument("--output", default=None,
-                        help="Output path template (use {hand} for L/R). "
-                             f"Default: {DEFAULT_OUTPUT}")
-    parser.add_argument("--split", default="train", choices=["train", "test", "all"],
-                        help="Which PIG split to train on (default: train)")
+    parser.add_argument("--pig-root", required=True)
+    parser.add_argument("--output-dir", default=DEFAULT_MODEL_DIR)
+    parser.add_argument("--no-extended", action="store_true",
+                        help="Train pitch-only model (default: extended with timing)")
     args = parser.parse_args()
 
-    output_template = args.output or DEFAULT_OUTPUT
+    extended = not args.no_extended
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    print(f"Loading PIG dataset from: {args.pig_root}")
-    split = "train" if args.split != "test" else "test"
-    data = load_pig_split(args.pig_root, split=split)
+    print(f"Loading PIG training split from: {args.pig_root}")
+    data = load_pig_split(args.pig_root, split="train")
 
     for hand in ("R", "L"):
         pieces = data[hand]
-        out_path = output_template.replace("{hand}", hand)
-        print(f"\n--- {hand} hand ---")
-        train_one_hand(pieces, hand, out_path)
+        if not pieces:
+            print(f"  [WARN] No {hand}-hand pieces, skipping.")
+            continue
+
+        print(f"\n--- {hand} hand ({len(pieces)} sequences) ---")
+
+        # 2nd-order model
+        if extended:
+            model_2nd = train_hmm_extended(pieces)
+            path_2nd  = os.path.join(args.output_dir, f"hmm_{hand}.npz")
+            print(f"  Training extended 2nd-order HMM...")
+        else:
+            simple_pieces = [[(p, f) for p, f, *_ in piece] for piece in pieces]
+            model_2nd = train_hmm(simple_pieces)
+            path_2nd  = os.path.join(args.output_dir, f"hmm_{hand}.npz")
+            print(f"  Training pitch-only 2nd-order HMM...")
+        save_model(model_2nd, path_2nd)
+        print(f"  Saved → {path_2nd}")
+
+        # 1st-order model (for entropy / model-recommended selection)
+        if extended:
+            model_1st = train_hmm_1st_extended(pieces)
+            path_1st  = os.path.join(args.output_dir, f"hmm1st_{hand}.npz")
+            print(f"  Training extended 1st-order HMM (for entropy)...")
+        else:
+            simple_pieces = [[(p, f) for p, f, *_ in piece] for piece in pieces]
+            model_1st = train_hmm_1st(simple_pieces)
+            path_1st  = os.path.join(args.output_dir, f"hmm1st_{hand}.npz")
+            print(f"  Training pitch-only 1st-order HMM (for entropy)...")
+        save_model(model_1st, path_1st)
+        print(f"  Saved → {path_1st}")
 
     print("\nDone.")
 
