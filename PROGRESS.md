@@ -104,15 +104,15 @@ Rule-based selector that flags notes needing human review.
 
 | Piece type | Hard % |
 |---|---|
-| Slow / simple (Gymnopedie, Kiss the Rain) | ~14% |
-| Moderate (Scarlatti, Chopin Waltz) | ~17–21% |
-| Complex (Clair de Lune, Schumann) | ~29% |
-| Virtuosic (Jeux d'eau, Kapustin) | ~33–46% |
+| Scarlatti, Schumann | 4–6% |
+| Gymnopedie, Grieg, Kiss the Rain, miditest | 14–17% |
+| Chopin Waltz, Kapustin Etude | 17–28% |
+| Clair de Lune, Kapustin Sonata, Jeux d'eau | 28–32% |
 
 ```bash
 # CLI usage
 python ManualCheck/hard_part_selector.py <fingering.tsv> --summary
-python ManualCheck/hard_part_selector.py <fingering.tsv> --rules fast_jump,fast_phrase,hand_overlap
+python ManualCheck/hard_part_selector.py <fingering.tsv> --rules fast_jump,hand_overlap,impossible_fingering
 ```
 
 ### `check_app.py` — Streamlit Review UI
