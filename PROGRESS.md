@@ -94,7 +94,7 @@ Rule-based selector that flags notes needing human review.
 |---|---|
 | `impossible_fingering` | Finger cross w/o thumb; chord span > 15 semitones |
 | `fast_jump` | ≥ 15 semitone jump in < 180 ms (hand blur in video) |
-| `fast_phrase` | ≥ 4 consecutive notes with IOI < 100 ms |
+| `fast_phrase` | ≥ 10 consecutive notes with IOI < 1000 ms (sustained fast run) |
 | `hand_overlap` | L/R pitch regions intersect within 200 ms window |
 | `rapid_alternation` | Tremolo-like L/R alternation (> 8 notes/sec) |
 | `noinfo` | Note with no finger assigned |

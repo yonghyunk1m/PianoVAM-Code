@@ -173,12 +173,13 @@ def rule_fast_jump(
 
 def rule_fast_phrase(
     df: pd.DataFrame,
-    ioi_threshold_ms: float = 100.0,
-    min_run_length: int = 4,
+    ioi_threshold_ms: float = 1000.0,
+    min_run_length: int = 10,
 ) -> pd.Series:
     """
     Runs of consecutive notes (per hand) with IOI < threshold.
-    Short IOI = fast passage where hand shape is ambiguous in video.
+    10+ notes each within 1s of the next = sustained fast passage
+    where hand shape is ambiguous in video.
     Flags the entire run.
     """
     flags = pd.Series(False, index=df.index)
@@ -415,7 +416,7 @@ RULES: dict[str, callable] = {
 RULE_DESCRIPTIONS: dict[str, str] = {
     "impossible_fingering":     "Physically impossible: finger cross w/o thumb, or span overreach",
     "fast_jump":                "Fast position jump: hand blurry in video, MediaPipe inaccurate",
-    "fast_phrase":              "Fast phrase (IOI < 100ms, ≥4 notes): tracking unreliable",
+    "fast_phrase":              "Fast phrase (≥10 notes IOI < 1000ms): sustained run, tracking unreliable",
     "hand_overlap":             "Hand position overlap: L/R pitch regions intersect",
     "rapid_alternation":        "Rapid L/R alternation (tremolo): hand identity ambiguous",
     "noinfo":                   "No finger assigned (Noinfo)",
