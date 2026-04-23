@@ -1,12 +1,11 @@
 """
 Rule-based hard part selector for manual fingering verification.
 
-Identifies "hard" notes that should be prioritized for human review.
-Rules will be extended once the user specifies them; current rules are placeholders
-based on common musical difficulty indicators.
+Identifies notes that should be prioritized for human review based on
+physical impossibility, MediaPipe tracking difficulty, and musical complexity.
 
 Input:  fingering TSV (onset, key_offset, frame_offset, note, velocity, hand, finger)
-Output: list of note indices flagged as "hard"
+Output: DataFrame with 'is_hard' and 'hard_reasons' columns
 """
 from __future__ import annotations
 import pandas as pd
@@ -19,196 +18,438 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 def load_fingering_tsv(path: str) -> pd.DataFrame:
-    """Load a fingering TSV into a DataFrame. Handles both comment-header and plain-header formats."""
-    # Peek at first non-empty line to detect format
+    """Load a fingering TSV. Handles both comment-header and plain-header formats."""
     with open(path) as f:
         first = f.readline().strip()
     if first.startswith("#"):
-        # Comment-style header: "# onset\tkey_offset\t..."
-        header_line = first.lstrip("# ").strip()
-        col_names = [c.strip().lower() for c in header_line.split("\t")]
+        col_names = [c.strip().lower() for c in first.lstrip("# ").strip().split("\t")]
         df = pd.read_csv(path, sep="\t", comment="#", header=None, names=col_names)
     else:
         df = pd.read_csv(path, sep="\t")
         df.columns = [c.strip().lower() for c in df.columns]
-    # Convert finger to int where possible (keep "Noinfo" as string)
+
+    if "finger" not in df.columns:
+        df["finger"] = "Noinfo"
+    if "hand" not in df.columns:
+        df["hand"] = "Noinfo"
+
     def parse_finger(v):
         try:
             return int(v)
         except (ValueError, TypeError):
             return None
-    if "finger" not in df.columns:
-        df["finger"]     = "Noinfo"
-        df["hand"]       = "Noinfo"
-    if "hand" not in df.columns:
-        df["hand"]       = "Noinfo"
+
     df["finger_int"] = df["finger"].apply(parse_finger)
     return df
 
 
 # ---------------------------------------------------------------------------
-# Individual rules — each returns a boolean Series (True = hard)
+# Helper: max comfortable hand span in semitones between two fingers
+# Based on standard piano pedagogy (adult average hand).
 # ---------------------------------------------------------------------------
+#   finger pair (lo, hi) → max semitone span comfortable for most adults
+_MAX_SPAN = {
+    (1, 2): 4,   (1, 3): 7,   (1, 4): 9,  (1, 5): 12,
+    (2, 3): 3,   (2, 4): 5,   (2, 5): 8,
+    (3, 4): 3,   (3, 5): 5,
+    (4, 5): 3,
+}
+
+def _max_span(f1: int, f2: int) -> int:
+    lo, hi = min(f1, f2), max(f1, f2)
+    return _MAX_SPAN.get((lo, hi), 12)
+
+
+# ===========================================================================
+# RULE 1  — Physically impossible fingering
+# ===========================================================================
+
+def rule_impossible_fingering(df: pd.DataFrame) -> pd.Series:
+    """
+    Two sub-checks:
+
+    (a) Non-thumb finger crossing: consecutive same-hand notes where the finger
+        direction opposes the expected direction without a thumb (finger 1).
+        R hand: ascending pitch → finger should increase (or thumb cross).
+        L hand: ascending pitch → finger should decrease (or thumb cross).
+        Flagged only when neither the previous nor current finger is the thumb.
+
+    (b) Same-hand chord span overreach: two notes in the same hand that overlap
+        in time (held simultaneously) whose pitch distance exceeds the comfortable
+        span for that finger pair. This catches physically impossible chord
+        stretches, not sequential jumps.
+    """
+    flags = pd.Series(False, index=df.index)
+
+    has_offset = "key_offset" in df.columns
+
+    for hand in ("L", "R"):
+        mask = df["hand"] == hand
+        sub  = df[mask]
+        if len(sub) < 2:
+            continue
+
+        notes   = sub["note"].values
+        fingers = sub["finger_int"].values
+        onsets  = sub["onset"].values if "onset" in df.columns else np.zeros(len(sub))
+        offsets = sub["key_offset"].values if has_offset else onsets + 0.5
+        idxs    = list(sub.index)
+
+        for i in range(1, len(notes)):
+            f_prev, f_curr = fingers[i-1], fingers[i]
+            p_prev, p_curr = notes[i-1], notes[i]
+            if f_prev is None or f_curr is None:
+                continue
+
+            # (a) Finger-cross without thumb
+            # Cross means: pitch and finger go in opposite expected directions
+            # For R: normal = pitch_up↔finger_up; cross = pitch_up↔finger_down
+            # For L: normal = pitch_up↔finger_down; cross = pitch_up↔finger_up
+            # Combined: cross when (pitch_up == finger_up) == (hand == "L")
+            if p_prev != p_curr:  # skip repeated notes
+                pitch_up  = bool(p_curr > p_prev)
+                finger_up = bool(f_curr > f_prev)
+                is_cross  = (pitch_up == finger_up) == (hand == "L")
+                if is_cross and f_prev != 1 and f_curr != 1:
+                    flags.iloc[idxs[i-1]] = True
+                    flags.iloc[idxs[i]]   = True
+
+            # (b) Chord span overreach: notes overlap in time → held simultaneously
+            if onsets[i] < offsets[i-1]:   # note i starts before note i-1 ends
+                pitch_span = abs(int(p_curr) - int(p_prev))
+                if pitch_span > _max_span(f_prev, f_curr):
+                    flags.iloc[idxs[i-1]] = True
+                    flags.iloc[idxs[i]]   = True
+
+    return flags
+
+
+# ===========================================================================
+# RULE 2  — Fast position jump (hand blur)
+# ===========================================================================
+
+def rule_fast_jump(
+    df: pd.DataFrame,
+    jump_semitones: int = 10,
+    jump_window_ms: float = 180.0,
+) -> pd.Series:
+    """
+    A hand jumps a large interval in a short time → hand is blurry in video,
+    MediaPipe tracking likely inaccurate.
+
+    Flags both the note before and after the jump, plus the 2 notes on each side
+    (the hand is unstable during the approach and landing).
+    """
+    flags = pd.Series(False, index=df.index)
+    if "onset" not in df.columns:
+        return flags
+
+    for hand in ("L", "R"):
+        mask = df["hand"] == hand
+        sub  = df[mask]
+        if len(sub) < 2:
+            continue
+
+        notes  = sub["note"].values
+        onsets = sub["onset"].values * 1000   # → ms
+        idxs   = list(sub.index)
+
+        for i in range(1, len(notes)):
+            dt = onsets[i] - onsets[i-1]
+            dp = abs(int(notes[i]) - int(notes[i-1]))
+            if dp >= jump_semitones and dt <= jump_window_ms:
+                # Flag the jump itself plus 2-note context on each side
+                for j in range(max(0, i-2), min(len(idxs), i+3)):
+                    flags.iloc[idxs[j]] = True
+
+    return flags
+
+
+# ===========================================================================
+# RULE 3  — Fast phrase (many notes per second)
+# ===========================================================================
+
+def rule_fast_phrase(
+    df: pd.DataFrame,
+    ioi_threshold_ms: float = 100.0,
+    min_run_length: int = 4,
+) -> pd.Series:
+    """
+    Runs of consecutive notes (per hand) with IOI < threshold.
+    Short IOI = fast passage where hand shape is ambiguous in video.
+    Flags the entire run.
+    """
+    flags = pd.Series(False, index=df.index)
+    if "onset" not in df.columns:
+        return flags
+
+    for hand in ("L", "R"):
+        mask = df["hand"] == hand
+        sub  = df[mask]
+        if len(sub) < min_run_length:
+            continue
+
+        onsets = sub["onset"].values * 1000
+        idxs   = list(sub.index)
+        ioi    = np.diff(onsets)
+
+        run_start = None
+        for i, dt in enumerate(ioi):
+            if dt < ioi_threshold_ms:
+                if run_start is None:
+                    run_start = i
+            else:
+                if run_start is not None:
+                    run_end = i  # inclusive
+                    if (run_end - run_start + 1) >= min_run_length:
+                        for j in range(run_start, run_end + 2):
+                            if j < len(idxs):
+                                flags.iloc[idxs[j]] = True
+                    run_start = None
+
+        # Close open run at end
+        if run_start is not None:
+            run_end = len(ioi)
+            if (run_end - run_start + 1) >= min_run_length:
+                for j in range(run_start, min(run_end + 2, len(idxs))):
+                    flags.iloc[idxs[j]] = True
+
+    return flags
+
+
+# ===========================================================================
+# RULE 4  — Hand position overlap
+# ===========================================================================
+
+def rule_hand_overlap(
+    df: pd.DataFrame,
+    window_ms: float = 200.0,
+    overlap_tolerance_semitones: int = 2,
+) -> pd.Series:
+    """
+    Within a time window, L and R hands occupy overlapping pitch regions.
+    Flags all notes in the window when L pitches >= R pitches (overlap or crossing).
+    MediaPipe hand identity assignment gets unreliable when hands are close.
+    """
+    flags = pd.Series(False, index=df.index)
+    if "onset" not in df.columns:
+        return flags
+
+    onsets = df["onset"].values * 1000
+    notes  = df["note"].values
+    hands  = df["hand"].values
+
+    for i in range(len(df)):
+        if hands[i] not in ("L", "R"):
+            continue
+        t = onsets[i]
+        # Gather all notes within the window
+        window_mask = np.abs(onsets - t) <= window_ms
+        L_pitches = notes[window_mask & (hands == "L")]
+        R_pitches = notes[window_mask & (hands == "R")]
+        if len(L_pitches) == 0 or len(R_pitches) == 0:
+            continue
+        # Overlap: max(L) >= min(R) - tolerance
+        if L_pitches.max() >= R_pitches.min() - overlap_tolerance_semitones:
+            flags.iloc[i] = True
+
+    return flags
+
+
+# ===========================================================================
+# RULE 5  — Noinfo notes
+# ===========================================================================
 
 def rule_noinfo(df: pd.DataFrame) -> pd.Series:
-    """Notes with no finger assignment (Noinfo)."""
+    """Notes with no finger assignment at all."""
     return df["finger"].astype(str).str.lower() == "noinfo"
 
 
-def rule_thumb_under(df: pd.DataFrame) -> pd.Series:
+# ===========================================================================
+# RULE 6  — Noinfo cluster (3+ consecutive Noinfo)
+# ===========================================================================
+
+def rule_noinfo_cluster(df: pd.DataFrame, min_cluster: int = 3) -> pd.Series:
     """
-    Thumb-under / finger-over passages: thumb (1) appears after index/middle (2,3)
-    within same hand in a short window — a classic technical difficulty.
+    3 or more consecutive Noinfo notes → MediaPipe completely lost tracking.
+    The entire cluster and its context are unreliable.
     """
-    flags = pd.Series(False, index=df.index)
-    window = 4  # look at 4 consecutive notes per hand
-    for hand in ("L", "R"):
-        mask = df["hand"] == hand
-        sub = df[mask].copy()
-        if len(sub) < window:
-            continue
-        fingers = sub["finger_int"].values
-        for i in range(len(fingers) - window + 1):
-            chunk = fingers[i:i+window]
-            if None in chunk:
-                continue
-            # thumb appearing after 2/3 in descending pitch (R hand going left = thumb under)
-            for j in range(1, len(chunk)):
-                if chunk[j] == 1 and chunk[j-1] in (2, 3):
-                    flags.iloc[sub.index[i:i+window]] = True
+    flags   = pd.Series(False, index=df.index)
+    is_ni   = (df["finger"].astype(str).str.lower() == "noinfo").values
+    idxs    = list(df.index)
+
+    run_start = None
+    for i, ni in enumerate(is_ni):
+        if ni:
+            if run_start is None:
+                run_start = i
+        else:
+            if run_start is not None and (i - run_start) >= min_cluster:
+                for j in range(run_start, i):
+                    flags.iloc[idxs[j]] = True
+            run_start = None
+    if run_start is not None and (len(is_ni) - run_start) >= min_cluster:
+        for j in range(run_start, len(is_ni)):
+            flags.iloc[idxs[j]] = True
+
     return flags
 
 
-def rule_large_interval(df: pd.DataFrame, semitone_threshold: int = 9) -> pd.Series:
+# ===========================================================================
+# RULE 7  — Rapid hand alternation (tremolo-like)
+# ===========================================================================
+
+def rule_rapid_alternation(
+    df: pd.DataFrame,
+    alt_ioi_ms: float = 120.0,
+    min_alternations: int = 4,
+) -> pd.Series:
     """
-    Large melodic intervals (≥ threshold semitones) within same hand.
-    These often require hand stretches.
+    Rapid L/R alternation (tremolo, Alberti bass, etc.).
+    When both hands are active and interleaved faster than ~8 notes/sec,
+    MediaPipe struggles to distinguish which hand is which.
+    Flags runs of ≥ min_alternations consecutive L/R/L/R patterns.
     """
     flags = pd.Series(False, index=df.index)
+    if "onset" not in df.columns or len(df) < min_alternations:
+        return flags
+
+    onsets = df["onset"].values * 1000
+    hands  = df["hand"].values
+    idxs   = list(df.index)
+
+    run_start = None
+    for i in range(1, len(df)):
+        dt   = onsets[i] - onsets[i-1]
+        h_ok = hands[i] in ("L", "R") and hands[i-1] in ("L", "R")
+        alternating = h_ok and hands[i] != hands[i-1] and dt < alt_ioi_ms
+        if alternating:
+            if run_start is None:
+                run_start = i - 1
+        else:
+            if run_start is not None:
+                run_len = i - run_start
+                if run_len >= min_alternations:
+                    for j in range(run_start, i):
+                        flags.iloc[idxs[j]] = True
+                run_start = None
+
+    if run_start is not None and (len(df) - run_start) >= min_alternations:
+        for j in range(run_start, len(df)):
+            flags.iloc[idxs[j]] = True
+
+    return flags
+
+
+# ===========================================================================
+# RULE 8  — Finger order violation in stepwise motion
+# ===========================================================================
+
+def rule_stepwise_order_violation(
+    df: pd.DataFrame,
+    step_semitones: int = 2,
+) -> pd.Series:
+    """
+    For stepwise passages (consecutive notes ≤ step_semitones apart within a hand),
+    finger numbers should follow pitch direction (R ascending → finger increases,
+    or thumb cross; R descending → finger decreases, or thumb cross).
+    Flags cases where direction flips without a thumb (finger 1) involved.
+    """
+    flags = pd.Series(False, index=df.index)
+
     for hand in ("L", "R"):
         mask = df["hand"] == hand
         sub  = df[mask]
         if len(sub) < 2:
             continue
-        notes = sub["note"].values
-        diffs = np.abs(np.diff(notes.astype(float)))
-        hard_idx = np.where(diffs >= semitone_threshold)[0]
-        for idx in hard_idx:
-            flags.iloc[sub.index[idx]]   = True
-            flags.iloc[sub.index[idx+1]] = True
-    return flags
 
-
-def rule_finger_repetition(df: pd.DataFrame) -> pd.Series:
-    """
-    Same finger used on consecutive different pitches in same hand.
-    Unusual and potentially erroneous or very deliberate.
-    """
-    flags = pd.Series(False, index=df.index)
-    for hand in ("L", "R"):
-        mask = df["hand"] == hand
-        sub  = df[mask]
-        if len(sub) < 2:
-            continue
-        fingers = sub["finger_int"].values
         notes   = sub["note"].values
-        for i in range(1, len(fingers)):
-            if (fingers[i] is not None and fingers[i-1] is not None
-                    and fingers[i] == fingers[i-1]
-                    and notes[i] != notes[i-1]):
-                flags.iloc[sub.index[i]]   = True
-                flags.iloc[sub.index[i-1]] = True
-    return flags
-
-
-def rule_weak_finger_high_speed(df: pd.DataFrame, fast_ioi_ms: float = 100.0) -> pd.Series:
-    """
-    Ring or pinky finger (4 or 5) used for fast notes (IOI < threshold ms).
-    Weak fingers on fast passages are physically demanding and error-prone.
-    """
-    flags = pd.Series(False, index=df.index)
-    if "onset" not in df.columns:
-        return flags
-    for hand in ("L", "R"):
-        mask = df["hand"] == hand
-        sub  = df[mask]
-        if len(sub) < 2:
-            continue
-        onsets  = sub["onset"].values * 1000  # s → ms
         fingers = sub["finger_int"].values
-        ioi     = np.diff(onsets)
-        for i in range(len(ioi)):
-            if ioi[i] < fast_ioi_ms and fingers[i] in (4, 5):
-                flags.iloc[sub.index[i]]   = True
-                flags.iloc[sub.index[i+1]] = True
-    return flags
+        idxs    = list(sub.index)
 
-
-def rule_hand_crossing(df: pd.DataFrame) -> pd.Series:
-    """
-    Detect likely hand crossings: left hand note pitch > right hand note pitch
-    at overlapping onset times (within 50ms).
-    """
-    flags = pd.Series(False, index=df.index)
-    if "onset" not in df.columns:
-        return flags
-    onset = df["onset"].values
-    note  = df["note"].values
-    hand  = df["hand"].values
-    overlap_ms = 0.05  # 50ms window
-    for i in range(len(df)):
-        if hand[i] not in ("L", "R"):
-            continue
-        for j in range(max(0, i-5), min(len(df), i+5)):
-            if i == j or hand[j] not in ("L", "R") or hand[i] == hand[j]:
+        for i in range(1, len(notes)):
+            f_prev, f_curr = fingers[i-1], fingers[i]
+            p_prev, p_curr = notes[i-1], notes[i]
+            if f_prev is None or f_curr is None:
                 continue
-            if abs(onset[i] - onset[j]) < overlap_ms:
-                if hand[i] == "L" and note[i] > note[j]:   # L above R
-                    flags.iloc[i] = True
-                    flags.iloc[j] = True
-                elif hand[i] == "R" and note[i] < note[j]: # R below L
-                    flags.iloc[i] = True
-                    flags.iloc[j] = True
+            # skip same pitch (repeated note — finger change is valid)
+            if p_curr == p_prev:
+                continue
+            pitch_diff = abs(int(p_curr) - int(p_prev))
+            if pitch_diff > step_semitones:
+                continue  # not stepwise
+
+            # For R hand: ascending steps → finger should increase (or thumb cross)
+            # For L hand: ascending steps → finger should decrease (or thumb cross)
+            pitch_up  = p_curr > p_prev
+            finger_up = f_curr > f_prev
+            is_cross  = (pitch_up == finger_up) == (hand == "L")
+            if is_cross and f_prev != 1 and f_curr != 1:
+                flags.iloc[idxs[i-1]] = True
+                flags.iloc[idxs[i]]   = True
+
     return flags
+
+
+# ===========================================================================
+# Rule registry
+# ===========================================================================
+
+RULES: dict[str, callable] = {
+    # Physically impossible
+    "impossible_fingering":       rule_impossible_fingering,
+    # MediaPipe unreliable situations
+    "fast_jump":                  rule_fast_jump,
+    "fast_phrase":                rule_fast_phrase,
+    "hand_overlap":               rule_hand_overlap,
+    "rapid_alternation":          rule_rapid_alternation,
+    # Data quality / no assignment
+    "noinfo":                     rule_noinfo,
+    "noinfo_cluster":             rule_noinfo_cluster,
+    # Fingering logic errors
+    "stepwise_order_violation":   rule_stepwise_order_violation,
+}
+
+RULE_DESCRIPTIONS: dict[str, str] = {
+    "impossible_fingering":     "Physically impossible: finger cross w/o thumb, or span overreach",
+    "fast_jump":                "Fast position jump: hand blurry in video, MediaPipe inaccurate",
+    "fast_phrase":              "Fast phrase (IOI < 100ms, ≥4 notes): tracking unreliable",
+    "hand_overlap":             "Hand position overlap: L/R pitch regions intersect",
+    "rapid_alternation":        "Rapid L/R alternation (tremolo): hand identity ambiguous",
+    "noinfo":                   "No finger assigned (Noinfo)",
+    "noinfo_cluster":           "Cluster of 3+ consecutive Noinfo: tracking completely lost",
+    "stepwise_order_violation": "Finger order wrong in stepwise motion (w/o thumb cross)",
+}
+
+# Default rules to enable in the UI
+DEFAULT_RULES = [
+    "impossible_fingering",
+    "fast_jump",
+    "fast_phrase",
+    "hand_overlap",
+    "noinfo_cluster",
+]
 
 
 # ---------------------------------------------------------------------------
 # Main selector
 # ---------------------------------------------------------------------------
 
-RULES = {
-    "noinfo":             rule_noinfo,
-    "thumb_under":        rule_thumb_under,
-    "large_interval":     rule_large_interval,
-    "finger_repetition":  rule_finger_repetition,
-    "weak_finger_fast":   rule_weak_finger_high_speed,
-    "hand_crossing":      rule_hand_crossing,
-}
-
-
 def select_hard_parts(
     df: pd.DataFrame,
     enabled_rules: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Apply enabled rules and return a DataFrame with a 'hard_reasons' column.
-
-    Args:
-        df:            Fingering DataFrame from load_fingering_tsv.
-        enabled_rules: List of rule names to apply (default: all).
-    Returns:
-        df with added columns:
-          'is_hard'     : bool — True if any rule fires
-          'hard_reasons': str  — comma-separated rule names that fired
+    Apply enabled rules. Returns df with 'is_hard' and 'hard_reasons' columns.
     """
     if enabled_rules is None:
         enabled_rules = list(RULES.keys())
 
-    reasons = [[] for _ in range(len(df))]
+    reasons: list[list[str]] = [[] for _ in range(len(df))]
 
     for rule_name in enabled_rules:
         if rule_name not in RULES:
-            raise ValueError(f"Unknown rule: {rule_name}. Available: {list(RULES.keys())}")
+            raise ValueError(f"Unknown rule: '{rule_name}'. Available: {list(RULES.keys())}")
         flags = RULES[rule_name](df)
         for i, flag in enumerate(flags):
             if flag:
@@ -216,7 +457,7 @@ def select_hard_parts(
 
     df = df.copy()
     df["hard_reasons"] = [",".join(r) for r in reasons]
-    df["is_hard"] = df["hard_reasons"].str.len() > 0
+    df["is_hard"]      = df["hard_reasons"].str.len() > 0
     return df
 
 
@@ -226,9 +467,6 @@ def get_hard_segments(
 ) -> list[dict]:
     """
     Group consecutive hard notes into segments with surrounding context.
-
-    Returns list of dicts:
-        {start_idx, end_idx, reasons, notes (DataFrame slice)}
     """
     hard_idx = df.index[df["is_hard"]].tolist()
     if not hard_idx:
@@ -250,18 +488,18 @@ def get_hard_segments(
     return segments
 
 
-def _make_segment(df, start, end, context):
+def _make_segment(df: pd.DataFrame, start: int, end: int, context: int) -> dict:
     ctx_start = max(0, start - context)
     ctx_end   = min(len(df) - 1, end + context)
-    reasons   = set(",".join(df.loc[start:end, "hard_reasons"]).split(",")) - {""}
+    reasons   = sorted(set(",".join(df.loc[start:end, "hard_reasons"]).split(",")) - {""})
     return {
-        "start_idx":   start,
-        "end_idx":     end,
-        "ctx_start":   ctx_start,
-        "ctx_end":     ctx_end,
-        "reasons":     sorted(reasons),
-        "n_hard":      end - start + 1,
-        "notes":       df.iloc[ctx_start:ctx_end+1],
+        "start_idx": start,
+        "end_idx":   end,
+        "ctx_start": ctx_start,
+        "ctx_end":   ctx_end,
+        "reasons":   reasons,
+        "n_hard":    end - start + 1,
+        "notes":     df.iloc[ctx_start : ctx_end + 1],
     }
 
 
@@ -273,14 +511,16 @@ if __name__ == "__main__":
     import argparse, sys
 
     parser = argparse.ArgumentParser(description="Select hard parts from fingering TSV")
-    parser.add_argument("tsv", help="Path to fingering TSV")
+    parser.add_argument("tsv", help="Path to fingering TSV with hand/finger columns")
     parser.add_argument("--rules", default=None,
-                        help="Comma-separated rules to apply (default: all). "
+                        help="Comma-separated rule names (default: all). "
                              f"Available: {','.join(RULES)}")
     parser.add_argument("--context", type=int, default=4,
-                        help="Context notes around hard segments (default: 4)")
+                        help="Context notes around each hard segment (default: 4)")
     parser.add_argument("--output", default=None,
-                        help="Save hard-note TSV to this path")
+                        help="Save flagged-note TSV to this path")
+    parser.add_argument("--summary", action="store_true",
+                        help="Print per-rule hit counts")
     args = parser.parse_args()
 
     df = load_fingering_tsv(args.tsv)
@@ -290,11 +530,19 @@ if __name__ == "__main__":
     n_hard = df["is_hard"].sum()
     print(f"{Path(args.tsv).name}: {n_hard}/{len(df)} notes flagged as hard")
 
+    if args.summary:
+        enabled = rules or list(RULES.keys())
+        print("\nPer-rule counts:")
+        for r in enabled:
+            count = df["hard_reasons"].str.contains(r).sum()
+            print(f"  {r:35s}: {count}")
+
     segs = get_hard_segments(df, args.context)
-    print(f"{len(segs)} hard segments:")
+    print(f"\n{len(segs)} hard segments:")
     for s in segs:
-        print(f"  notes {s['start_idx']}–{s['end_idx']}  reasons: {s['reasons']}")
+        print(f"  notes {s['start_idx']:4d}–{s['end_idx']:4d}  "
+              f"({s['n_hard']} hard)  reasons: {s['reasons']}")
 
     if args.output:
         df[df["is_hard"]].to_csv(args.output, sep="\t", index=False)
-        print(f"Saved hard notes → {args.output}")
+        print(f"\nSaved flagged notes → {args.output}")

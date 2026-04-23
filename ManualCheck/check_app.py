@@ -22,7 +22,8 @@ _PROJECT_ROOT = _DIR.parent
 sys.path.insert(0, str(_DIR))
 
 from hard_part_selector import (
-    load_fingering_tsv, select_hard_parts, get_hard_segments, RULES
+    load_fingering_tsv, select_hard_parts, get_hard_segments,
+    RULES, RULE_DESCRIPTIONS, DEFAULT_RULES,
 )
 
 st.set_page_config(layout="wide", page_title="PianoVAM Fingering Checker")
@@ -87,17 +88,8 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Hard-part rules")
     enabled_rules = []
-    rule_descriptions = {
-        "noinfo":            "Noinfo notes (no finger assigned)",
-        "thumb_under":       "Thumb-under / finger-cross passages",
-        "large_interval":    "Large intervals (≥9 semitones)",
-        "finger_repetition": "Same finger on consecutive different pitches",
-        "weak_finger_fast":  "Weak finger (4/5) on fast notes",
-        "hand_crossing":     "Potential hand crossing",
-    }
-    for rule, desc in rule_descriptions.items():
-        if st.checkbox(desc, value=(rule in ("noinfo", "thumb_under", "large_interval")),
-                       key=f"rule_{rule}"):
+    for rule, desc in RULE_DESCRIPTIONS.items():
+        if st.checkbox(desc, value=(rule in DEFAULT_RULES), key=f"rule_{rule}"):
             enabled_rules.append(rule)
 
     context_notes = st.slider("Context notes around hard segment", 2, 10, 4)
