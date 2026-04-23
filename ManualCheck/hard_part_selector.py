@@ -47,12 +47,14 @@ def load_fingering_tsv(path: str) -> pd.DataFrame:
 # Helper: max comfortable hand span in semitones between two fingers
 # Based on standard piano pedagogy (adult average hand).
 # ---------------------------------------------------------------------------
-#   finger pair (lo, hi) → max semitone span comfortable for most adults
+#   finger pair (lo, hi) → max semitone span (threshold for flagging)
+#   Tuned so that an octave (12st) with thumb+pinky is NOT flagged;
+#   only truly extreme stretches (>15st, e.g. 10th or 12th) are flagged.
 _MAX_SPAN = {
-    (1, 2): 4,   (1, 3): 7,   (1, 4): 9,  (1, 5): 12,
-    (2, 3): 3,   (2, 4): 5,   (2, 5): 8,
-    (3, 4): 3,   (3, 5): 5,
-    (4, 5): 3,
+    (1, 2): 6,   (1, 3): 10,  (1, 4): 12, (1, 5): 15,
+    (2, 3): 4,   (2, 4): 7,   (2, 5): 10,
+    (3, 4): 4,   (3, 5): 7,
+    (4, 5): 4,
 }
 
 def _max_span(f1: int, f2: int) -> int:
