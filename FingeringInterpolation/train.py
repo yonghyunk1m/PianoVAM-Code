@@ -46,9 +46,9 @@ def main():
 
         # 2nd-order model
         if extended:
-            model_2nd = train_hmm_extended(pieces)
+            model_2nd = train_hmm_extended(pieces, hand=hand)
             path_2nd  = os.path.join(args.output_dir, f"hmm_{hand}.npz")
-            print(f"  Training extended 2nd-order HMM...")
+            print(f"  Training extended 2nd-order HMM (keypos emission)...")
         else:
             simple_pieces = [[(p, f) for p, f, *_ in piece] for piece in pieces]
             model_2nd = train_hmm(simple_pieces)
@@ -59,7 +59,7 @@ def main():
 
         # 1st-order model (for entropy / model-recommended selection)
         if extended:
-            model_1st = train_hmm_1st_extended(pieces)
+            model_1st = train_hmm_1st_extended(pieces, hand=hand)
             path_1st  = os.path.join(args.output_dir, f"hmm1st_{hand}.npz")
             print(f"  Training extended 1st-order HMM (for entropy)...")
         else:
