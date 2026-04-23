@@ -1,123 +1,156 @@
 """
-PIG (Piano Fingering Dataset) loader.
+PIG (Piano Fingering Dataset) v1.02 loader.
 
 Dataset: https://beam.kisarazu.ac.jp/research/PianoFingeringDataset/
-Format per note row:
-    onset_time  offset_time  channel  pitch  onset_vel  offset_vel  finger
+Format: PianoFingeringDataset_v1.02/FingeringFiles/{piece_id}-{performer_id}_fingering.txt
 
-finger convention: 1-5 for each hand; channel 0=right, 1=left (or as annotated).
-Each file contains one hand's notes. File naming: <id>-<performer>_<hand>.txt
-  hand suffix: 'rh' = right, 'lh' = left.
+File columns (tab-separated, first line is version comment):
+  0: note_index
+  1: onset_time (sec)
+  2: offset_time (sec)
+  3: note_name (e.g. C4)
+  4: MIDI_pitch (0-127)
+  5: velocity
+  6: hand (0=Right, 1=Left)
+  7: finger (1-5; negative = thumb-under/cross-over; compound e.g. "4_1")
 
-Returns list of (pitch, finger) tuples per piece/hand for HMM training.
+Train/test split (following Saitō & Nakamura 2022):
+  Test : Bach, Mozart, Chopin pieces
+  Train: all other composers (Miscellaneous set)
 """
+from __future__ import annotations
+import csv
 import os
 import glob
 from pathlib import Path
 
-
-# PIG file columns (0-indexed):
-#   0: onset, 1: offset, 2: channel, 3: pitch, 4: onset_vel, 5: offset_vel, 6: finger
-_PITCH_COL  = 3
-_FINGER_COL = 6
+TEST_COMPOSERS = {"Bach", "Mozart", "Chopin"}
+_HAND_MAP = {"0": "R", "1": "L"}
 
 
-def load_pig_file(path: str) -> list[tuple[int, int]]:
+def _parse_finger(raw: str) -> int | None:
     """
-    Load one PIG annotation file → list of (pitch, finger) sorted by onset.
-    Skips header lines (starting with //).
-    finger is 1-indexed (1=thumb, 5=pinky); negative = thumb-under / cross-over, treated as abs.
+    Parse finger token → int 1-5, or None if unparseable.
+    Handles negatives (thumb-under) and compound tokens (e.g. '4_1').
     """
-    notes = []
+    raw = raw.strip()
+    if not raw or raw == "0":
+        return None
+    # Take first finger for compound tokens like "4_1"
+    token = raw.split("_")[0]
+    try:
+        f = abs(int(token))
+        return f if 1 <= f <= 5 else None
+    except ValueError:
+        return None
+
+
+def load_pig_file(path: str) -> dict[str, list[tuple[int, int]]]:
+    """
+    Load one PIG annotation file → per-hand (pitch, finger) lists sorted by onset.
+
+    Returns:
+        {"R": [(pitch, finger), ...], "L": [(pitch, finger), ...]}
+    """
+    notes: dict[str, list] = {"R": [], "L": []}
+
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("//"):
                 continue
-            parts = line.split()
-            if len(parts) < 7:
+            parts = line.split("\t")
+            if len(parts) < 8:
                 continue
             try:
-                onset  = float(parts[0])
-                pitch  = int(parts[_PITCH_COL])
-                finger = abs(int(parts[_FINGER_COL]))  # abs: handle thumb-under
-            except ValueError:
+                onset  = float(parts[1])
+                pitch  = int(parts[4])
+                hand   = _HAND_MAP.get(parts[6].strip())
+                finger = _parse_finger(parts[7])
+            except (ValueError, IndexError):
                 continue
-            if 1 <= finger <= 5 and 0 <= pitch <= 127:
-                notes.append((onset, pitch, finger))
 
-    notes.sort(key=lambda x: x[0])
-    return [(pitch, finger) for _, pitch, finger in notes]
+            if hand is None or finger is None:
+                continue
+            if not (0 <= pitch <= 127):
+                continue
 
+            notes[hand].append((onset, pitch, finger))
 
-def load_pig_split(pig_root: str, split: str = "train") -> dict[str, list[list[tuple[int, int]]]]:
-    """
-    Load PIG dataset split.
-
-    PIG directory layout (two common variants supported):
-      Option A — separate hand dirs:
-        pig_root/
-          PianoFingeringDataset_v1.00/
-            annotations/
-              <id>-<performer>_<RH|LH>.txt
-
-      Option B — flat:
-        pig_root/
-          *_rh.txt  /  *_lh.txt  (case-insensitive)
-
-    Args:
-        pig_root: Root of PIG dataset.
-        split: "train" (Miscellaneous) or "test" (Bach, Mozart, Chopin).
-
-    Returns:
-        {"R": [piece1_notes, piece2_notes, ...], "L": [...]}
-        where each piece_notes = [(pitch, finger), ...]
-    """
-    # Discover annotation files
-    ann_files = []
-    for pattern in ["**/*.txt", "*.txt"]:
-        ann_files = glob.glob(os.path.join(pig_root, pattern), recursive=True)
-        if ann_files:
-            break
-
-    if not ann_files:
-        raise FileNotFoundError(f"No .txt annotation files found under: {pig_root}")
-
-    # Split logic: test pieces are Bach (b), Mozart (m), Chopin (c) — by filename prefix
-    TEST_PREFIXES = {"b", "m", "c"}  # first character of PIG piece id
-
-    def is_test(filepath: str) -> bool:
-        stem = Path(filepath).stem.lower()
-        # e.g. "BACH_1_rh" or "B001-05_rh"
-        return stem[0] in TEST_PREFIXES
-
-    result = {"R": [], "L": []}
-    for path in sorted(ann_files):
-        stem = Path(path).stem.lower()
-        if split == "train" and is_test(path):
-            continue
-        if split == "test" and not is_test(path):
-            continue
-
-        hand = None
-        if stem.endswith("_rh") or stem.endswith("-rh"):
-            hand = "R"
-        elif stem.endswith("_lh") or stem.endswith("-lh"):
-            hand = "L"
-        else:
-            continue  # skip files without hand suffix
-
-        notes = load_pig_file(path)
-        if notes:
-            result[hand].append(notes)
+    result = {}
+    for hand, entries in notes.items():
+        entries.sort(key=lambda x: x[0])
+        result[hand] = [(pitch, finger) for _, pitch, finger in entries]
 
     return result
 
 
-def load_pig_all_hands(pig_root: str, split: str = "train") -> list[list[tuple[int, int]]]:
+def _load_list(pig_root: str) -> dict[str, str]:
     """
-    Load all hand sequences from a PIG split (R and L together).
-    Used for training a single hand-agnostic model (not recommended; prefer per-hand).
+    Load List.csv → {piece_id: composer}.
+    Handles BOM in first column name.
     """
-    data = load_pig_split(pig_root, split)
-    return data["R"] + data["L"]
+    list_path = os.path.join(pig_root, "List.csv")
+    if not os.path.exists(list_path):
+        return {}
+    mapping = {}
+    with open(list_path, encoding="utf-8-sig") as f:  # utf-8-sig strips BOM
+        reader = csv.DictReader(f)
+        for row in reader:
+            pid = row.get("Id", "").strip().zfill(3)
+            composer = row.get("Composer", "").strip()
+            mapping[pid] = composer
+    return mapping
+
+
+def load_pig_split(
+    pig_root: str,
+    split: str = "train",
+) -> dict[str, list[list[tuple[int, int]]]]:
+    """
+    Load PIG dataset split.
+
+    Args:
+        pig_root: Root of PIG dataset (contains PianoFingeringDataset_v1.02/).
+        split:    "train" (Miscellaneous) or "test" (Bach, Mozart, Chopin).
+
+    Returns:
+        {"R": [[(pitch, finger), ...], ...], "L": [...]}
+        One list per annotated file (piece × performer combination).
+    """
+    # Locate FingeringFiles directory
+    fingering_dir = None
+    for candidate in [
+        os.path.join(pig_root, "PianoFingeringDataset_v1.02", "FingeringFiles"),
+        os.path.join(pig_root, "FingeringFiles"),
+    ]:
+        if os.path.isdir(candidate):
+            fingering_dir = candidate
+            break
+    if fingering_dir is None:
+        raise FileNotFoundError(f"FingeringFiles not found under: {pig_root}")
+
+    piece_composer = _load_list(os.path.join(pig_root, "PianoFingeringDataset_v1.02"))
+    if not piece_composer:
+        piece_composer = _load_list(pig_root)
+
+    result: dict[str, list] = {"R": [], "L": []}
+
+    for path in sorted(glob.glob(os.path.join(fingering_dir, "*_fingering.txt"))):
+        stem = Path(path).stem  # e.g. "001-1_fingering"
+        piece_id = stem.split("-")[0].zfill(3)
+
+        composer = piece_composer.get(piece_id, "")
+        is_test  = composer in TEST_COMPOSERS
+
+        if split == "train" and is_test:
+            continue
+        if split == "test" and not is_test:
+            continue
+
+        hands = load_pig_file(path)
+        for hand in ("R", "L"):
+            if hands[hand]:
+                result[hand].append(hands[hand])
+
+    return result
