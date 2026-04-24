@@ -21,8 +21,10 @@ _WIDTH_X        = 15                            # dX clipped to [-15, +15]
 N_KEYPOS_BINS   = 3 * (2 * _WIDTH_X + 1)       # 93 bins
 _SHORT_TIME_S   = 0.03                          # 30ms IOI threshold
 _SHORT_TIME_COST = -5.0                         # fixed log-penalty
-_W1             = 0.5    # weight for 1-step keypos emission
-_W2             = 0.5    # weight for 2-step keypos emission
+# Optimized weights from Nakamura 2020 Table 3 (Bayesian optimisation result)
+_W1             = 0.556  # weight for 1-step keypos emission  (paper: α1=0.556)
+_W2             = 0.407  # weight for 2-step keypos emission  (paper: α2=0.407)
+_LAM1           = 0.474  # 2nd→1st order transition smoothing (paper: λ1=0.474)
 
 
 # ---------------------------------------------------------------------------
@@ -150,13 +152,34 @@ def train_hmm_extended(pieces: list[list[tuple[int, int, float]]], hand: str = "
             dx2, dy2 = _keypos_interval(pitches[n], pitches[n-2])
             outProb2[fpp, fc, _keypos_idx(dx2, dy2)] += 1
 
-    trans    /= trans.sum(axis=2, keepdims=True)
+    # 1st-order transition (for λ1 smoothing)
+    trans1 = np.zeros((N_FINGERS, N_FINGERS)) + EPS
+    for piece in pieces:
+        if len(piece) < 2:
+            continue
+        fingers = [f - 1 for _, f, _ in piece]
+        for n in range(1, len(fingers)):
+            trans1[fingers[n-1], fingers[n]] += 1
+    trans1 /= trans1.sum(axis=1, keepdims=True)
+
+    trans_ml = trans / trans.sum(axis=2, keepdims=True)
+
+    # λ1 smoothing: mix 2nd-order MLE with 1st-order (Nakamura 2020 Eq.10)
+    trans_smooth = np.zeros_like(trans_ml)
+    for fpp in range(N_FINGERS):
+        for fp in range(N_FINGERS):
+            trans_smooth[fpp, fp] = (
+                (1 - _LAM1) * trans_ml[fpp, fp] + _LAM1 * trans1[fp]
+            )
+    # Re-normalise after mixing (should already sum to 1 but enforce numerically)
+    trans_smooth /= trans_smooth.sum(axis=2, keepdims=True)
+
     init     /= init.sum()
     outProb  /= outProb.sum(axis=2, keepdims=True)
     outProb2 /= outProb2.sum(axis=2, keepdims=True)
 
     return {
-        "trans": trans, "init": init,
+        "trans": trans_smooth, "init": init,
         "outProb": outProb, "outProb2": outProb2,
         "hand": hand, "type": "extended",
     }
