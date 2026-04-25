@@ -28,11 +28,20 @@ from hard_part_selector import (
 
 st.set_page_config(layout="wide", page_title="PianoVAM Fingering Checker")
 
+_NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+def midi_to_note(pitch) -> str:
+    try:
+        p = int(pitch)
+        return f"{_NOTE_NAMES[p % 12]}{p // 12 - 1}"
+    except (TypeError, ValueError):
+        return str(pitch)
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-DATASET_ROOT   = str(_PROJECT_ROOT / "PianoVAM_v1.0")
-FINGERING_DIR  = os.path.join(DATASET_ROOT, "Fingering_HMM")   # after HMM interpolation
+DATASET_ROOT   = "/workspace/PianoVAM_v1.0"
+FINGERING_DIR  = os.path.join(DATASET_ROOT, "Fingering_resync")  # re-extracted Sep 4/5
 VIDEO_DIR      = os.path.join(DATASET_ROOT, "Video")
 METADATA_PATH  = os.path.join(DATASET_ROOT, "metadata.json")
 OUTPUT_DIR     = os.path.join(DATASET_ROOT, "Fingering_Checked")
@@ -153,7 +162,9 @@ col_stats3.metric("Hard segments",  len(segments))
 
 if not segments:
     st.success("No hard segments found with selected rules.")
-    st.dataframe(df[["onset", "note", "hand", "finger", "hard_reasons"]].head(50))
+    disp = df[["onset", "note", "hand", "finger", "hard_reasons"]].head(50).copy()
+    disp["note"] = disp["note"].apply(midi_to_note)
+    st.dataframe(disp)
     st.stop()
 
 st.markdown("---")
@@ -200,8 +211,10 @@ seg_notes = seg["notes"].copy()
 # Display read-only overview
 display_cols = ["onset", "note", "hand", "finger", "is_hard", "hard_reasons"]
 display_cols = [c for c in display_cols if c in seg_notes.columns]
+disp = seg_notes[display_cols].copy()
+disp["note"] = disp["note"].apply(midi_to_note)
 st.dataframe(
-    seg_notes[display_cols].style.apply(
+    disp.style.apply(
         lambda row: ["background-color: #ffe0e0" if row.get("is_hard", False) else ""
                      for _ in row],
         axis=1
@@ -223,8 +236,8 @@ if len(hard_in_seg) > 0:
         range(len(note_positions)),
         format_func=lambda i: (
             f"Note {note_positions[i]}  "
-            f"onset={df.loc[note_positions[i], 'onset']:.3f}  "
-            f"pitch={df.loc[note_positions[i], 'note']}  "
+            f"onset={df.loc[note_positions[i], 'onset']:.3f}s  "
+            f"{midi_to_note(df.loc[note_positions[i], 'note'])}  "
             f"hand={df.loc[note_positions[i], 'hand']}  "
             f"finger={df.loc[note_positions[i], 'finger']}  "
             f"[{df.loc[note_positions[i], 'hard_reasons']}]"

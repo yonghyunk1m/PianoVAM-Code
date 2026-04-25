@@ -85,8 +85,8 @@ def run_mediapipe(video_path: str, keyboard_coords: list, output_pkl_dir: str) -
         f"{_main_mod.min_tracking_confidence*100}"
     )
 
-    # Build keyboard geometry
-    lu, ru, rd, ld, blackratio, ldistortion, rdistortion, cdistortion = keyboard_coords
+    # Build keyboard geometry — coords order: [lu, ru, ld, rd, ...]
+    lu, ru, ld, rd, blackratio, ldistortion, rdistortion, cdistortion = keyboard_coords
     keyboard = generatekeyboard(lu=lu, ru=ru, ld=ld, rd=rd,
                                  blackratio=blackratio, ldistortion=ldistortion,
                                  rdistortion=rdistortion, cdistortion=cdistortion)
@@ -297,7 +297,8 @@ def run_fingering_extraction(
 
 def _build_keyboard(coords):
     from detection.floatinghands import generatekeyboard
-    lu, ru, rd, ld, blackratio, ldistortion, rdistortion, cdistortion = coords
+    # coords order matches datagenerate(): [lu, ru, ld, rd, blackratio, ldistortion, rdistortion, cdistortion]
+    lu, ru, ld, rd, blackratio, ldistortion, rdistortion, cdistortion = coords
     return generatekeyboard(lu=lu, ru=ru, ld=ld, rd=rd,
                              blackratio=blackratio, ldistortion=ldistortion,
                              rdistortion=rdistortion, cdistortion=cdistortion)

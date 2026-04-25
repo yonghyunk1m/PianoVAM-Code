@@ -1,7 +1,7 @@
 # PianoVAM Development Progress
 
 Branch: `260422_fix`  
-Last updated: 2026-04-23
+Last updated: 2026-04-25
 
 ---
 
@@ -23,104 +23,109 @@ Last updated: 2026-04-23
 
 ---
 
-## 2. `FingeringInterpolation/` — Nakamura HMM ✅
+## 2. `FingeringDetection/reextract_headless.py` ✅
 
-Implements Saitō & Nakamura 2022 (2nd-order HMM fingering completion).  
-Train on PIG dataset, apply constrained Viterbi to fill `Noinfo` gaps in PianoVAM.
+Headless re-extraction of fingering for the resynced Sep 4/5 videos.  
+Runs the full ASDF pipeline without Streamlit:
+**MediaPipe → `handpositiondetector` → `handfingercorresponder` → `decide_fingering`**
 
-| File | Role |
-|---|---|
-| `hmm.py` | `train_hmm`, `constrained_viterbi`, `forward_backward`, `compute_entropy` |
-| `pig_loader.py` | Loads PIG dataset (train/test split, per hand) |
-| `pianovam_loader.py` | Decodes fingerinfo pkl → per-hand sequences; assigns Noinfo notes by pitch proximity |
-| `train.py` | CLI: trains R+L HMMs on PIG → `models/hmm_R.npz`, `hmm_L.npz` |
-| `interpolate.py` | CLI: runs constrained Viterbi on PianoVAM, writes updated pkl + TSV |
-| `evaluate.py` | Reproduces paper table (random / specific / model-rec strategies) |
+### Pipeline steps
 
-### Usage
+| Step | Function | Source |
+|---|---|---|
+| Hand landmark extraction | `run_mediapipe()` | `mediapipe.HandLandmarker` |
+| Skeleton / floating frame detection | `modelskeleton`, `depthlist`, `detectfloatingframes` | `detection/floatinghands.py` |
+| MIDI tokenization | `_miditotoken_simplified()` | custom (avoids hardcoded paths) |
+| Key-hand correspondence | `handfingercorresponder()` | `detection/midicomparison.py` |
+| Finger decision | `decide_fingering()` | `detection/decider.py` |
+
+### Bug fixed: keyboard geometry was flipped
+
+`_build_keyboard()` unpacked `ld`/`rd` corners in the wrong order, silently mirroring the keyboard left-right. All fingertips mapped to the opposite end of the keyboard, causing ~58% Noinfo before the fix vs **15.7% after**.
+
+### Results (30 recordings extracted)
+
+- **28/32** successfully extracted  
+- **2 failures** (`21-04-38` special/blurry, `21-26-38` 2-min piece): `modelskeleton` crashes when only one hand appears in the video
+- Overall Noinfo: **15.7%** across 71,489 notes
+- Output: `PianoVAM_v1.0/fingering_pickles_resync/` and `PianoVAM_v1.0/Fingering_resync/`
 
 ```bash
-# 1. Train on PIG
-python FingeringInterpolation/train.py --pig-root /path/to/PIG
-
-# 2. Apply to PianoVAM
-python FingeringInterpolation/interpolate.py --batch \
-    --dataset-root PianoVAM_v1.0 \
-    --output-dir   PianoVAM_v1.0/Fingering_HMM
-
-# 3. Evaluate on PIG test set
-python FingeringInterpolation/evaluate.py --pig-root /path/to/PIG
+python FingeringDetection/reextract_headless.py --all-sep45
+python FingeringDetection/reextract_headless.py --video 2024-09-04_16-13-44 --skip-mediapipe
 ```
-
-> **Pending**: PIG dataset download — requires manual registration at  
-> https://beam.kisarazu.ac.jp/research/PianoFingeringDataset/register.php
 
 ---
 
-## 3. `FingeringDetection/reextract_headless.py` ✅
+## 3. `FingeringInterpolation/` — Nakamura HMM ✅
 
-Headless re-extraction of fingering for the resynced Sep 4/5 videos.  
-Runs the full ASDF pipeline (MediaPipe → `handfingercorresponder` → `decide_fingering`) without Streamlit.
+Implements Nakamura et al. 2020 / Saitō & Nakamura 2022 (2nd-order HMM fingering completion).  
+Trained on PIG dataset v1.02; applies constrained Viterbi to fill `Noinfo` gaps.
 
-- Self-contained `miditotoken` avoids hardcoded paths
-- `keyboardcoordinateinfo.pkl` already contains all 32 Sep 4/5 entries — no re-calibration needed
+### Model (correctly matches Nakamura 2020 source code)
+
+- **Emission**: physical keyboard position interval (dX, dY) → **93 bins** (not semitones)
+  - dX = white-key columns apart, clipped to ±15
+  - dY = black/white key type difference
+  - Formula: `dkey = 3*(dX+15) + dY + 1`
+- **2-step emission**: `outProb2[fpp, fc]` — distance between note n and note n−2
+- **Timing**: fixed log-penalty **−5** when IOI < 30ms AND finger/pitch directions conflict
+- **Weights**: α1=0.556, α2=0.407 (Bayesian-optimised per Table 3)
+- **Transition smoothing**: λ1=0.474 (2nd→1st order interpolation)
+- **Smoothing**: EPS=1e-3 (matches `SmoothInit`)
+
+### Training data (PIG v1.02)
+
+- Train: Miscellaneous set — 120 pieces, `#Fingering < 4` (159 sequences/hand)
+- Test: Bach + Mozart + Chopin sets — 30 pieces, `#Fingering ≥ 4` (150 sequences/hand)
+- PIG v1.02 downloaded from Google Drive
+
+### Evaluation results
+
+| Strategy | Paper R/L | Our R/L |
+|---|---|---|
+| R=0 (no labels) | ~67%/~68% | 30.0% / 43.3% |
+| Random 40% | ~88%/~88% | 62.9% / 69.9% |
+| Middle+ModelRec 50% | ~94%/~94% | 73.3% / 82.0% |
+
+Remaining gap vs paper due to Mgen (multi-performer average) vs single-performer evaluation.
 
 ```bash
-# All Sep 4/5 videos
-python FingeringDetection/reextract_headless.py --all-sep45
-
-# Single video (test)
-python FingeringDetection/reextract_headless.py --video 2024-09-04_16-13-44
-
-# Skip MediaPipe if cached handlist pkl already exists
-python FingeringDetection/reextract_headless.py --all-sep45 --skip-mediapipe
+python FingeringInterpolation/train.py --pig-root /workspace/PIG
+python FingeringInterpolation/evaluate.py --pig-root /workspace/PIG
+python FingeringInterpolation/interpolate.py --batch \
+    --dataset-root PianoVAM_v1.0 --output-dir PianoVAM_v1.0/Fingering_HMM
 ```
-
-Output:
-- MediaPipe cache → `PianoVAM_v1.0/mediapipe_cache_resync/`
-- Fingerinfo pkl → `PianoVAM_v1.0/fingering_pickles_resync/`
-
-> **Pending**: Actually running it — MediaPipe on 32 videos takes several hours of compute.
 
 ---
 
 ## 4. `ManualCheck/` — Manual Verification Tool ✅
 
-### `hard_part_selector.py`
-
-Rule-based selector that flags notes needing human review.
+### `hard_part_selector.py` — 7 rule-based flags
 
 | Rule | Catches |
 |---|---|
-| `impossible_fingering` | Finger cross w/o thumb; chord span > 15 semitones |
-| `fast_jump` | ≥ 15 semitone jump in < 180 ms (hand blur in video) |
-| `hand_overlap` | L/R pitch regions intersect within 200 ms window |
-| `rapid_alternation` | Tremolo-like L/R alternation (> 8 notes/sec) |
+| `impossible_fingering` | Finger cross w/o thumb (IOI any); chord span exceeds anatomical limit |
+| `fast_jump` | ≥15 semitone jump in <180ms (hand blurry in video) |
+| `hand_overlap` | L/R pitch regions intersect within 200ms |
+| `rapid_alternation` | Tremolo-like L/R alternation (>8 notes/sec) |
 | `noinfo` | Note with no finger assigned |
-| `noinfo_cluster` | 3+ consecutive Noinfo notes (tracking lost) |
+| `noinfo_cluster` | 3+ consecutive Noinfo (tracking completely lost) |
 | `stepwise_order_violation` | Finger direction wrong in stepwise motion (w/o thumb cross) |
+
+**Chord span thresholds (semitones):**
+`1-2:7, 1-3:12, 1-4:14, 1-5:16, 2-3:4, 2-4:7, 2-5:10, 3-4:4, 3-5:7, 4-5:6`
 
 **Results on 11 GT-annotated recordings: 17.5% flagged overall**
 
-| Piece type | Hard % |
-|---|---|
-| Scarlatti, Schumann | 4–6% |
-| Gymnopedie, Grieg, Kiss the Rain, miditest | 14–17% |
-| Chopin Waltz, Kapustin Etude | 17–28% |
-| Clair de Lune, Kapustin Sonata, Jeux d'eau | 28–32% |
-
-```bash
-# CLI usage
-python ManualCheck/hard_part_selector.py <fingering.tsv> --summary
-python ManualCheck/hard_part_selector.py <fingering.tsv> --rules fast_jump,hand_overlap,impossible_fingering
-```
-
 ### `check_app.py` — Streamlit Review UI
 
-Steps through hard segments, shows video at the right timestamp, supports inline hand/finger editing, and saves corrected TSV.
+Steps through hard segments, shows video at the right timestamp, displays notes as **C4/G#4** style, supports inline hand/finger editing, saves corrected TSV.
 
 ```bash
-streamlit run ManualCheck/check_app.py
+streamlit run ManualCheck/check_app.py --server.port 8501 --server.address 0.0.0.0
+# Expose via Cloudflare Quick Tunnel:
+/opt/portal-aio/tunnel_manager/cloudflared tunnel --url http://localhost:8501
 ```
 
 ---
@@ -130,24 +135,23 @@ streamlit run ManualCheck/check_app.py
 ```
 1. Download dataset              ✅ Done
         ↓
-2. Re-extract fingering          ⏳ Ready to run (needs compute)
+2. Re-extract fingering          ✅ Done (28/32 videos, 15.7% Noinfo)
    (Sep 4/5 resynced videos)
         ↓
-3. Manual check — hard parts     ⏳ Ready (needs fingering data)
+3. Manual check — hard parts     ✅ Ready (check_app.py running)
    (rule-based selection)
         ↓
-4. HMM interpolation             ⏳ Needs PIG dataset
-   (Noinfo → predicted finger)
+4. HMM interpolation             ✅ Model trained (PIG v1.02)
+   (Noinfo → predicted finger)       Apply: interpolate.py
         ↓
-5. Manual check — HMM output     ⏳ Needs step 4
+5. Manual check — HMM output     ⏳ After step 4
 ```
 
 ## Pending Items
 
-| Item | Blocker |
+| Item | Status |
 |---|---|
-| Run MediaPipe re-extraction (Sep 4/5) | Compute time (~hours) |
-| PIG dataset download | Manual registration required |
-| Train HMM on PIG | PIG dataset |
-| Apply HMM to PianoVAM | Fingering pickles + PIG model |
-| Full hard-part evaluation (all 107 recordings) | Fingering zip upload |
+| Manual verification of Sep 4/5 fingerings | In progress (check_app running) |
+| Apply HMM to Sep 4/5 fingerinfo | Ready — run `interpolate.py` |
+| Manual check of HMM-interpolated output | After HMM application |
+| Full hard-part evaluation (all 107 recordings) | Needs full fingering zip upload |

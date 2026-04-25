@@ -51,10 +51,10 @@ def load_fingering_tsv(path: str) -> pd.DataFrame:
 #   Tuned so that an octave (12st) with thumb+pinky is NOT flagged;
 #   only truly extreme stretches (>15st, e.g. 10th or 12th) are flagged.
 _MAX_SPAN = {
-    (1, 2): 6,   (1, 3): 10,  (1, 4): 12, (1, 5): 15,
+    (1, 2): 7,   (1, 3): 12,  (1, 4): 14, (1, 5): 16,
     (2, 3): 4,   (2, 4): 7,   (2, 5): 10,
     (3, 4): 4,   (3, 5): 7,
-    (4, 5): 4,
+    (4, 5): 6,
 }
 
 def _max_span(f1: int, f2: int) -> int:
