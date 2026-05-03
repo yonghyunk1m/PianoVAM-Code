@@ -20,6 +20,7 @@ Usage:
 Behavior:
   - No arguments or --sample:
       prepares annotate/public/data/notes.json from testvideo/sample.*
+      and, if present, also uses testvideo/fingering_pp.zip for seed labels
       and launches the annotate dev server on port 3333.
   - With custom arguments:
       passes them through to annotate/prepare_review_data.py, then launches
@@ -65,12 +66,26 @@ ensure_npm_deps() {
 }
 
 prepare_sample() {
-    python "$PREPARE_SCRIPT" \
-        --midi "$SCRIPT_DIR/testvideo/sample.mid" \
-        --video "$SCRIPT_DIR/testvideo/sample.mp4" \
-        --audio "$SCRIPT_DIR/testvideo/sample.wav" \
-        --trial sample \
-        --piece sample
+    local args=(
+        --midi "$SCRIPT_DIR/testvideo/sample.mid"
+        --video "$SCRIPT_DIR/testvideo/sample.mp4"
+        --audio "$SCRIPT_DIR/testvideo/sample.wav"
+    )
+
+    if [[ -f "$SCRIPT_DIR/testvideo/fingering_pp.zip" ]]; then
+        args+=(
+            --fingering-zip "$SCRIPT_DIR/testvideo/fingering_pp.zip"
+            --trial "2024-02-14_19-44-26"
+            --piece "2024-02-14_19-44-26"
+        )
+    else
+        args+=(
+            --trial sample
+            --piece sample
+        )
+    fi
+
+    python "$PREPARE_SCRIPT" "${args[@]}"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
