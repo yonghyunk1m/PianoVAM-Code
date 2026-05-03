@@ -2,3 +2,15 @@
 *.mid
 *.tsv
 *.json
+
+# annotate/
+annotate/node_modules/
+annotate/dist/
+annotate/.vite/
+annotate/*.log
+annotate/public/audio/*
+annotate/public/videos/*
+annotate/public/data/*
+!annotate/public/audio/.gitkeep
+!annotate/public/videos/.gitkeep
+!annotate/public/data/.gitkeep
