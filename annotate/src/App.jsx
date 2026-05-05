@@ -4,11 +4,20 @@ import PlaybackBar from './PlaybackBar.jsx';
 import { pushSnapshot, listSnapshots, loadSnapshot, clearAllSnapshots } from './backup.js';
 import { FINGER_INT_COLOR, FINGER_INT_NAME, INT_TO_LABEL } from './fingerPalette.js';
 
-const VERDICT_KEY = 'fingering_verdicts_v2';
-const HISTORY_KEY = 'fingering_history_v2';
-const BOOKMARK_KEY = 'fingering_bookmarks_v2';
-const BLIND_KEY = 'fingering_blind_mode';
-const SESSION_MARKER_KEY = 'fingering_session_id_v1';
+// Trial is selected via URL param ?trial=<name>.  All per-trial state is
+// keyed by this name so switching trials (full page reload) never bleeds
+// verdicts between sessions.
+const _urlTrial = new URLSearchParams(window.location.search).get('trial') || 'default';
+const VERDICT_KEY       = `fingering_verdicts_v2_${_urlTrial}`;
+const HISTORY_KEY       = `fingering_history_v2_${_urlTrial}`;
+const BOOKMARK_KEY      = `fingering_bookmarks_v2_${_urlTrial}`;
+const BLIND_KEY         = 'fingering_blind_mode';
+const SESSION_MARKER_KEY = `fingering_session_id_v1_${_urlTrial}`;
+const ANNOTATOR_KEY     = 'fingering_annotator_name';
+// Data file: public/data/<trial>.json  (fallback: notes.json for legacy prep)
+const NOTES_URL = _urlTrial !== 'default'
+  ? `/data/${_urlTrial}.json`
+  : '/data/notes.json';
 
 // Last-N cap on the undo history persisted to localStorage. The redo stack
 // is in-memory only.
@@ -16,7 +25,7 @@ const HISTORY_LIMIT = 200;
 
 // On note change, rewind the video this many seconds before the onset so the
 // annotator sees the approach (helps disambiguate which finger landed).
-const PRE_ONSET_LEAD_SEC = 0.5;
+const PRE_ONSET_LEAD_SEC = 0;
 
 // Hand-consistency warning: two consecutive notes within this time gap and
 // pitch span are likely the same hand; flip-flopping is suspicious.
@@ -44,6 +53,16 @@ function classifyVerdict(v) {
 }
 
 export default function App() {
+  // { all: string[], prepared: Set<string> }
+  const [trialList, setTrialList] = useState({ all: [], prepared: new Set() });
+  const [prepPending, setPrepPending] = useState(false);
+  useEffect(() => {
+    fetch('/api/trials')
+      .then(r => r.ok ? r.json() : { all: [], prepared: [] })
+      .then(d => setTrialList({ all: d.all || [], prepared: new Set(d.prepared || []) }))
+      .catch(() => {});
+  }, []);
+
   const [data, setData] = useState(null);
   const [idx, setIdx] = useState(0);
   const [verdicts, setVerdicts] = useState({});
@@ -61,6 +80,19 @@ export default function App() {
   // Persisted across reloads so a session is consistent.
   const [blindMode, setBlindMode] = useState(() => loadJSON(BLIND_KEY, false));
   useEffect(() => { localStorage.setItem(BLIND_KEY, JSON.stringify(blindMode)); }, [blindMode]);
+
+  // Annotator identity — persisted in localStorage so it survives page refresh.
+  const [annotatorName, setAnnotatorName] = useState(
+    () => localStorage.getItem(ANNOTATOR_KEY) || '');
+  useEffect(() => { localStorage.setItem(ANNOTATOR_KEY, annotatorName); }, [annotatorName]);
+
+  // Change log — append-only audit trail of notes changed from TSV original.
+  // Each entry: { annotator, trial, note_idx, pitch_name, onset_sec,
+  //               from_int, from_label, to_int, to_label, timestamp }
+  // Stored in public/data/change_log.json via /api/change-log.
+  const [changeLog, setChangeLog] = useState([]);
+  const changeLogLoadedRef = useRef(false);
+  const changeLogTimerRef = useRef(null);
 
   // Playback state
   const [currentTime, setCurrentTime] = useState(0);
@@ -92,7 +124,7 @@ export default function App() {
   // so the user doesn't stare at a stuck "Loading…" forever.
   const [loadError, setLoadError] = useState(null);
   useEffect(() => {
-    fetch('/data/notes.json')
+    fetch(NOTES_URL)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -167,6 +199,32 @@ export default function App() {
     localStorage.setItem(SESSION_MARKER_KEY, data.session_id || 'default');
   }, [bookmarks]);
 
+  // Load change log from server once data is ready.
+  useEffect(() => {
+    if (!data) return;
+    changeLogLoadedRef.current = false;
+    fetch('/api/change-log')
+      .then(r => r.ok ? r.json() : [])
+      .then(log => {
+        changeLogLoadedRef.current = true;
+        setChangeLog(Array.isArray(log) ? log : []);
+      })
+      .catch(() => { changeLogLoadedRef.current = true; });
+  }, [data]);
+
+  // Persist change log to server (debounced 500 ms).
+  useEffect(() => {
+    if (!changeLogLoadedRef.current) return;
+    if (changeLogTimerRef.current) clearTimeout(changeLogTimerRef.current);
+    changeLogTimerRef.current = setTimeout(() => {
+      fetch('/api/change-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changeLog),
+      }).catch(err => console.warn('change-log POST failed:', err));
+    }, 500);
+  }, [changeLog]);
+
   // Auto-resume to first un-annotated note on data load.
   useEffect(() => {
     if (!data) return;
@@ -208,6 +266,31 @@ export default function App() {
     }
     return null;
   }, [idx, data, verdicts, note]);
+
+  // Set of "trial#note_idx" keys for notes that were changed from TSV original.
+  const changedNoteIds = useMemo(
+    () => new Set(changeLog.map(e => `${e.trial}#${e.note_idx}`)),
+    [changeLog]);
+
+  // Live stats: how many algo-labeled notes, how many human-reviewed, how many differ.
+  // Denominator = all algorithm-labeled notes (not just human-reviewed ones).
+  const changeStats = useMemo(() => {
+    if (!data) return null;
+    const n_algo_total = data.notes.filter(
+      n => n.algorithm_int >= 1 && n.algorithm_int <= 10).length;
+    let n_reviewed = 0, n_changed = 0;
+    for (const n of data.notes) {
+      const v = classifyVerdict(verdicts[`${n.trial}#${n.note_idx}`]).human;
+      if (!v) continue;
+      n_reviewed++;
+      if (n.algorithm_int && v.finger_int >= 1 && v.finger_int <= 10
+          && v.finger_int !== n.algorithm_int)
+        n_changed++;
+    }
+    const errorPct = n_reviewed > 0 ? (100 * n_changed / n_reviewed).toFixed(1) : null;
+    const reviewedPct = n_algo_total > 0 ? (100 * n_reviewed / n_algo_total).toFixed(1) : null;
+    return { n_algo_total, n_reviewed, n_changed, errorPct, reviewedPct };
+  }, [data, verdicts]);
 
   // Snap video + audio to onset whenever the active note changes — but only
   // while playback is paused. During playback the auto-sync effect drives
@@ -419,6 +502,33 @@ export default function App() {
     const replaced = notesSlice.map(n => verdicts[`${n.trial}#${n.note_idx}`] || null);
     setHistory(h => [...h, { kind, startIdx, endIdx, replaced }]);
     setRedoStack([]);   // any new verdict invalidates the redo branch
+
+    // Append change-log entries when human pick differs from TSV original.
+    const name = annotatorName.trim();
+    if (name) {
+      const now = Date.now();
+      const entries = [];
+      for (let i = 0; i < notesSlice.length; i++) {
+        const n = notesSlice[i];
+        const v = ints[i];
+        if (n.algorithm_int && v >= 1 && v <= 10 && v !== n.algorithm_int) {
+          entries.push({
+            annotator: name,
+            trial: n.trial,
+            note_idx: n.note_idx,
+            pitch_name: n.pitch_name,
+            onset_sec: n.onset_sec,
+            from_int: n.algorithm_int,
+            from_label: INT_TO_LABEL[n.algorithm_int] || String(n.algorithm_int),
+            to_int: v,
+            to_label: INT_TO_LABEL[v] || String(v),
+            timestamp: now,
+          });
+        }
+      }
+      if (entries.length > 0) setChangeLog(prev => [...prev, ...entries]);
+    }
+
     setVerdicts(prev => {
       const next = { ...prev };
       for (let i = 0; i < notesSlice.length; i++) {
@@ -589,6 +699,36 @@ export default function App() {
     }
   }
 
+  function jumpNextHard() {
+    // Jump to the next hard note that hasn't been explicitly human-reviewed.
+    // Hard = is_hard flag OR any hard_reasons entry.
+    // Reviewed = verdict has a timestamp without source (explicit button press).
+    for (let pass = 0; pass < 2; pass++) {
+      const begin = pass === 0 ? idx + 1 : 0;
+      const end   = pass === 0 ? data.notes.length : idx;
+      for (let i = begin; i < end; i++) {
+        const n = data.notes[i];
+        if (!n.is_hard && hardReasonsForNote(n).length === 0) continue;
+        const v = verdicts[`${n.trial}#${n.note_idx}`];
+        if (v && v.timestamp && !v.source) continue;   // already reviewed
+        setIdx(i); return;
+      }
+    }
+  }
+  function jumpPrevHard() {
+    for (let pass = 0; pass < 2; pass++) {
+      const begin = pass === 0 ? idx - 1 : data.notes.length - 1;
+      const end   = pass === 0 ? -1 : idx;
+      for (let i = begin; i > end; i--) {
+        const n = data.notes[i];
+        if (!n.is_hard && hardReasonsForNote(n).length === 0) continue;
+        const v = verdicts[`${n.trial}#${n.note_idx}`];
+        if (v && v.timestamp && !v.source) continue;   // already reviewed
+        setIdx(i); return;
+      }
+    }
+  }
+
   function toggleBookmark() {
     const id = `${note.trial}#${note.note_idx}`;
     setBookmarks(prev => {
@@ -710,17 +850,29 @@ export default function App() {
   const algoLabel = note.algorithm_int ? INT_TO_LABEL[note.algorithm_int] : '—';
   const priorityStats = computePrioritySummary(data, verdicts);
 
+  const hardStats = (() => {
+    let total = 0, done = 0;
+    for (const n of data.notes) {
+      if (!n.is_hard && hardReasonsForNote(n).length === 0) continue;
+      total++;
+      const nv = verdicts[`${n.trial}#${n.note_idx}`];
+      if (nv && nv.timestamp && !nv.source) done++;
+    }
+    return { total, done, remaining: total - done };
+  })();
+
   return (
     <div className="app">
       <div className="header">
         <h1>Fingering Annotation</h1>
         <span className="progress">{idx + 1} / {data.notes.length}</span>
-        {!blindMode && (
-          <span className="priority-progress" title="Suspect notes human-reviewed / total">
-            🕵 {priorityStats.done} / {priorityStats.total} suspects
+        {!blindMode && hardStats.total > 0 && (
+          <span className="priority-progress"
+                title={`Hard notes reviewed: ${hardStats.done} / ${hardStats.total} — ${hardStats.remaining} remaining`}>
+            🔴 {hardStats.done}/{hardStats.total} hard
             <span className="priority-bar">
               <span className="priority-bar-fill"
-                    style={{ width: `${priorityStats.pct}%` }} />
+                    style={{ width: `${hardStats.total ? 100 * hardStats.done / hardStats.total : 0}%` }} />
             </span>
           </span>
         )}
@@ -731,6 +883,62 @@ export default function App() {
           {' · '}{note.pitch_name} (MIDI {note.pitch})
           {' · '}onset {note.onset_sec.toFixed(3)} s
         </span>
+        {trialList.all.length > 0 && (
+          <>
+            {prepPending && (
+              <span className="prep-status">⏳ Preparing…</span>
+            )}
+            <select
+              className="trial-select"
+              value={_urlTrial}
+              disabled={prepPending}
+              title="Select trial — unprepared ones are loaded automatically"
+              onChange={async e => {
+                const t = e.target.value;
+                if (t === _urlTrial) return;
+                if (trialList.prepared.has(t)) {
+                  window.location.href = `${window.location.pathname}?trial=${encodeURIComponent(t)}`;
+                } else {
+                  setPrepPending(true);
+                  try {
+                    const r = await fetch('/api/prep', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ trial: t }),
+                    });
+                    if (r.ok) {
+                      window.location.href = `${window.location.pathname}?trial=${encodeURIComponent(t)}`;
+                    } else {
+                      const err = await r.json().catch(() => ({}));
+                      alert('Prep failed: ' + (err.error || r.status));
+                      setPrepPending(false);
+                    }
+                  } catch {
+                    alert('Prep failed (network error)');
+                    setPrepPending(false);
+                  }
+                }
+              }}>
+              {/* Show current trial even if not in video list (e.g. legacy notes.json) */}
+              {_urlTrial !== 'default' && !trialList.all.includes(_urlTrial) && (
+                <option value={_urlTrial}>{_urlTrial}</option>
+              )}
+              {trialList.all.map(t => (
+                <option key={t} value={t}>
+                  {trialList.prepared.has(t) ? `✓ ${t}` : t}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+        <input
+          type="text"
+          className="annotator-input"
+          value={annotatorName}
+          onChange={e => setAnnotatorName(e.target.value)}
+          placeholder="Annotator name"
+          title="Your name is recorded with each change from TSV original"
+        />
         <button className={`btn-secondary ${blindMode ? 'active' : ''}`}
                 onClick={() => setBlindMode(b => !b)}
                 title="Blind mode: hide every algorithmic hint (algo pick, imputed pick, candidates, suspect markers).">
@@ -771,6 +979,7 @@ export default function App() {
                         duration={duration}
                         isPlaying={!paused}
                         blindMode={blindMode}
+                        changedNoteIds={changedNoteIds}
                         onSeek={t => { if (videoRef.current) videoRef.current.currentTime = t; }}
                         onSelectNote={gidx => setIdx(gidx)} />
             <div className="roll-info">
@@ -823,6 +1032,22 @@ export default function App() {
                   <span><b>{label}</b>{detail && <> — {detail}</>}
                     {handWarning && <span className="review-warn"> · ⚠ {handWarning}</span>}
                   </span>
+                </div>
+              );
+            })()}
+
+            {/* Change-log indicator for the current note */}
+            {(() => {
+              const entries = changeLog.filter(
+                e => e.trial === note.trial && e.note_idx === note.note_idx);
+              if (entries.length === 0) return null;
+              const last = entries[entries.length - 1];
+              return (
+                <div className="change-indicator">
+                  <span className="change-dot" />
+                  Changed from TSV: <b>{last.from_label}</b> → <b>{last.to_label}</b>
+                  {last.annotator && <> by <b>{last.annotator}</b></>}
+                  {entries.length > 1 && <> ({entries.length}×)</>}
                 </div>
               );
             })()}
@@ -913,6 +1138,8 @@ export default function App() {
                   <>
                     <button className="quick-btn" onClick={jumpPrevPriority}>prev (priority) <kbd>Q</kbd></button>
                     <button className="quick-btn" onClick={jumpNextPriority}>next (priority) <kbd>E</kbd></button>
+                    <button className="quick-btn" onClick={jumpPrevHard}>← Hard</button>
+                    <button className="quick-btn" onClick={jumpNextHard}>Hard →</button>
                   </>
                 )}
                 <button className="quick-btn" onClick={jumpNextUnlabeled}>⇥ unlabeled</button>

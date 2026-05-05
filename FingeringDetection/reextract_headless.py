@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Headless fingering re-extraction for resynced Sep 4/5 videos.
 

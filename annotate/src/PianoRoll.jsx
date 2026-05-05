@@ -13,6 +13,7 @@ const LOOK_BACK_SEC = 1.0;         // how far into the past to keep on screen
 export default function PianoRoll({ trialNotes, currentNoteIdx, verdicts = {},
                                      currentTime, duration, isPlaying,
                                      blindMode = false,
+                                     changedNoteIds = new Set(),
                                      onSeek, onSelectNote }) {
   const canvasRef = useRef(null);
   const layoutRef = useRef(null);
@@ -131,32 +132,37 @@ export default function PianoRoll({ trialNotes, currentNoteIdx, verdicts = {},
       } else if (human && human.finger_int === 0) {
         fill = '#ED6C02';
         stroke = 'rgba(0,0,0,0.25)';
-      } else if (!blindMode && n.algorithm_int && n.algorithm_status === 'labeled') {
-        fill = FINGER_INT_COLOR[n.algorithm_int] + '88';
-        stroke = FINGER_INT_COLOR[n.algorithm_int];
-        strokeW = 0.75;
+      } else if (!blindMode && n.algorithm_int) {
+        // Algorithm label — full color so the roll starts fully colored and
+        // reviewers fix wrong ones rather than annotating from scratch.
+        fill = FINGER_INT_COLOR[n.algorithm_int];
+        stroke = 'rgba(0,0,0,0.2)';
       } else if (!blindMode && n.imputed_int) {
-        // Imputed by sequence model (algo was ambiguous). Render fainter
-        // than algo so user can tell at a glance this is a model guess.
-        fill = FINGER_INT_COLOR[n.imputed_int] + '55';
-        stroke = FINGER_INT_COLOR[n.imputed_int];
-        strokeW = 1;
+        fill = FINGER_INT_COLOR[n.imputed_int];
+        stroke = 'rgba(0,0,0,0.2)';
       } else {
         fill = 'rgba(15,15,112,0.18)';
         stroke = 'rgba(15,15,112,0.40)';
       }
 
-      // Priority-not-yet-reviewed: bold orange outline overrides whatever
-      // color we picked above so the eye finds them immediately while
-      // scanning the roll. Suppressed in blindMode (it's an algo signal).
-      if (!blindMode) {
-        const isPriorityPending = !human
-          && (n.algorithm_status === 'no_candidate'
-              || n.algorithm_status === 'multi_candidate'
-              || (typeof n.algorithm_score === 'number' && n.algorithm_score < 0.65));
-        if (isPriorityPending && !isCurrent) {
-          stroke = '#ED6C02';
+      // Hard-rule notes not yet reviewed: bold red outline so they pop.
+      // Priority-not-yet-reviewed (algo uncertainty): bold orange outline.
+      // Both suppressed in blindMode.
+      if (!blindMode && !isCurrent) {
+        const isHardPending = !human
+          && (n.is_hard || (Array.isArray(n.hard_reasons) && n.hard_reasons.length > 0));
+        if (isHardPending) {
+          stroke = '#D32F2F';
           strokeW = 2.5;
+        } else {
+          const isPriorityPending = !human
+            && (n.algorithm_status === 'no_candidate'
+                || n.algorithm_status === 'multi_candidate'
+                || (typeof n.algorithm_score === 'number' && n.algorithm_score < 0.65));
+          if (isPriorityPending) {
+            stroke = '#ED6C02';
+            strokeW = 2.5;
+          }
         }
       }
 
@@ -167,11 +173,21 @@ export default function PianoRoll({ trialNotes, currentNoteIdx, verdicts = {},
         ctx.lineWidth = strokeW;
         ctx.strokeRect(x - w / 2, yTop, w, h);
       }
+      // Changed-from-TSV indicator: small gold dot in top-right corner
+      if (!isCurrent && changedNoteIds.has(`${n.trial}#${n.note_idx}`)) {
+        const dotR = Math.min(3.5, w * 0.25);
+        ctx.fillStyle = '#F9A825';
+        ctx.beginPath();
+        ctx.arc(x + w / 2 - dotR - 0.5, yTop + dotR + 1, dotR, 0, 2 * Math.PI);
+        ctx.fill();
+      }
       // Inscribe finger number on tall-enough notes (own picks only when blind)
       if (h >= 14) {
         const humanInt = (human && human.finger_int >= 1 && human.finger_int <= 10)
           ? human.finger_int : null;
-        const fingerInt = humanInt ?? (blindMode ? null : (n.algorithm_int || null));
+        const autoInt = (!blindMode && v && v.finger_int >= 1 && v.finger_int <= 10)
+          ? v.finger_int : (n.algorithm_int || null);
+        const fingerInt = humanInt ?? (blindMode ? null : autoInt);
         if (fingerInt && !isCurrent) {
           ctx.fillStyle = '#FFF';
           ctx.font = 'bold 9px ui-monospace, SF Mono, monospace';
@@ -226,7 +242,7 @@ export default function PianoRoll({ trialNotes, currentNoteIdx, verdicts = {},
         ctx.fillText(`C${p / 12 - 1}`, xOf(p), H - margin.b + 6);
       }
     }
-  }, [trialNotes, currentNoteIdx, verdicts, currentTime, isPlaying, pitchBounds, blindMode]);
+  }, [trialNotes, currentNoteIdx, verdicts, currentTime, isPlaying, pitchBounds, blindMode, changedNoteIds]);
 
   function onClick(e) {
     if (!layoutRef.current) return;
