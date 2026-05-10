@@ -23,6 +23,7 @@ def find_fingerinfo_pkl(pickles_dir, midi_basename):
     Prefer: fingerinfo_*.pkl (direct per-note), else fingering_<basename>.pkl (keyhandlist).
     """
     for pattern in [
+        f"fingerinfo_{midi_basename}.pkl",
         f"fingerinfo_{midi_basename}_*.pkl",
         f"fingerinfo_{midi_basename}.mp4_*.pkl",
         f"fingering_{midi_basename}.pkl",
@@ -187,6 +188,7 @@ def process_one(midi_path, pickles_dir, output_dir, tsv_dir, format_tsv, format_
 def main():
     parser = argparse.ArgumentParser(description="Export per-note fingering from fingerinfo + MIDI")
     parser.add_argument("--dataset-root", default=config.DATASET_ROOT, help="PianoVAM dataset root")
+    parser.add_argument("--pickles-dir", default=None, help="Override fingering pickles directory (default: <dataset-root>/fingering_pickles)")
     parser.add_argument("--output-dir", default=config.OUTPUT_DIR, help="Output directory")
     parser.add_argument("--format", choices=["tsv", "json", "both"], default="both")
     parser.add_argument("--finger-format", choices=["combined", "separate"], default="separate",
@@ -202,7 +204,7 @@ def main():
                        help="Swap L<->R (test: camera mirroring / L-R convention mismatch)")
     args = parser.parse_args()
 
-    pickles_dir = os.path.join(args.dataset_root, "fingering_pickles")
+    pickles_dir = args.pickles_dir or os.path.join(args.dataset_root, "fingering_pickles")
     midi_dir = os.path.join(args.dataset_root, "MIDI")
     tsv_dir = os.path.join(args.dataset_root, "TSV")
     output_dir = args.output_dir

@@ -40,7 +40,7 @@ def midi_to_note(pitch) -> str:
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-DATASET_ROOT   = "/workspace/PianoVAM_v1.0"
+DATASET_ROOT   = "/home/pjh/PianoVAM-Code/PianoVAM_v1.0"
 FINGERING_DIR  = os.path.join(DATASET_ROOT, "Fingering_resync")  # re-extracted Sep 4/5
 VIDEO_DIR      = os.path.join(DATASET_ROOT, "Video")
 METADATA_PATH  = os.path.join(DATASET_ROOT, "metadata.json")

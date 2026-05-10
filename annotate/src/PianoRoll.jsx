@@ -149,19 +149,25 @@ export default function PianoRoll({ trialNotes, currentNoteIdx, verdicts = {},
       // Priority-not-yet-reviewed (algo uncertainty): bold orange outline.
       // Both suppressed in blindMode.
       if (!blindMode && !isCurrent) {
-        const isHardPending = !human
-          && (n.is_hard || (Array.isArray(n.hard_reasons) && n.hard_reasons.length > 0));
-        if (isHardPending) {
-          stroke = '#D32F2F';
-          strokeW = 2.5;
+        const hasLabel = !!(n.algorithm_int || n.imputed_int);
+        if (!hasLabel && !human) {
+          stroke = '#BDBDBD';
+          strokeW = 0.5;
         } else {
-          const isPriorityPending = !human
-            && (n.algorithm_status === 'no_candidate'
-                || n.algorithm_status === 'multi_candidate'
-                || (typeof n.algorithm_score === 'number' && n.algorithm_score < 0.65));
-          if (isPriorityPending) {
-            stroke = '#ED6C02';
+          const isHardPending = !human
+            && (n.is_hard || (Array.isArray(n.hard_reasons) && n.hard_reasons.length > 0));
+          if (isHardPending) {
+            stroke = '#D32F2F';
             strokeW = 2.5;
+          } else {
+            const isPriorityPending = !human
+              && (n.algorithm_status === 'no_candidate'
+                  || n.algorithm_status === 'multi_candidate'
+                  || (typeof n.algorithm_score === 'number' && n.algorithm_score < 0.65));
+            if (isPriorityPending) {
+              stroke = '#ED6C02';
+              strokeW = 2.5;
+            }
           }
         }
       }
