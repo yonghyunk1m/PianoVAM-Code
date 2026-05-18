@@ -14,3 +14,7 @@ annotate/public/data/*
 !annotate/public/audio/.gitkeep
 !annotate/public/videos/.gitkeep
 !annotate/public/data/.gitkeep
+# Sample data for testing (symlinks → testvideo/, notes JSON committed directly)
+!annotate/public/audio/sample.wav
+!annotate/public/videos/sample.mp4
+!annotate/public/data/sample.json
