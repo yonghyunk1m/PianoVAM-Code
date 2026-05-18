@@ -66,7 +66,10 @@ def _max_span(f1: int, f2: int) -> int:
 # RULE 1  — Physically impossible fingering
 # ===========================================================================
 
-def rule_impossible_fingering(df: pd.DataFrame) -> pd.Series:
+def rule_impossible_fingering(
+    df: pd.DataFrame,
+    cross_timing_ms: float = 500.0,
+) -> pd.Series:
     """
     Two sub-checks:
 
@@ -74,12 +77,16 @@ def rule_impossible_fingering(df: pd.DataFrame) -> pd.Series:
         direction opposes the expected direction without a thumb (finger 1).
         R hand: ascending pitch → finger should increase (or thumb cross).
         L hand: ascending pitch → finger should decrease (or thumb cross).
-        Flagged only when neither the previous nor current finger is the thumb.
+        Flagged only when neither the previous nor current finger is the thumb
+        AND the two notes are within cross_timing_ms of each other — a cross
+        more than 500 ms apart gives the hand time to reposition, so it is not
+        physically impossible.
 
     (b) Same-hand chord span overreach: two notes in the same hand that overlap
         in time (held simultaneously) whose pitch distance exceeds the comfortable
         span for that finger pair. This catches physically impossible chord
-        stretches, not sequential jumps.
+        stretches, not sequential jumps. No extra timing gate needed here because
+        simultaneous overlap already implies close timing.
     """
     flags = pd.Series(False, index=df.index)
 
@@ -103,16 +110,13 @@ def rule_impossible_fingering(df: pd.DataFrame) -> pd.Series:
             if f_prev is None or f_curr is None:
                 continue
 
-            # (a) Finger-cross without thumb
-            # Cross means: pitch and finger go in opposite expected directions
-            # For R: normal = pitch_up↔finger_up; cross = pitch_up↔finger_down
-            # For L: normal = pitch_up↔finger_down; cross = pitch_up↔finger_up
-            # Combined: cross when (pitch_up == finger_up) == (hand == "L")
+            # (a) Finger-cross without thumb — only flag within timing window
             if p_prev != p_curr:  # skip repeated notes
+                dt_ms     = (onsets[i] - onsets[i-1]) * 1000
                 pitch_up  = bool(p_curr > p_prev)
                 finger_up = bool(f_curr > f_prev)
                 is_cross  = (pitch_up == finger_up) == (hand == "L")
-                if is_cross and f_prev != 1 and f_curr != 1:
+                if is_cross and f_prev != 1 and f_curr != 1 and dt_ms <= cross_timing_ms:
                     flags.iloc[idxs[i-1]] = True
                     flags.iloc[idxs[i]]   = True
 
@@ -220,14 +224,36 @@ def rule_noinfo(df: pd.DataFrame) -> pd.Series:
 # RULE 6  — Noinfo cluster (3+ consecutive Noinfo)
 # ===========================================================================
 
-def rule_noinfo_cluster(df: pd.DataFrame, min_cluster: int = 3) -> pd.Series:
+def rule_noinfo_cluster(
+    df: pd.DataFrame,
+    min_cluster: int = 3,
+    context_notes: int = 2,
+) -> pd.Series:
     """
-    3 or more consecutive Noinfo notes → MediaPipe completely lost tracking.
-    The entire cluster and its context are unreliable.
+    3+ consecutive Noinfo notes → MediaPipe completely lost tracking.
+    Flags the algorithm-assigned notes immediately before and after the cluster
+    (not the noinfo notes themselves, which have nothing to verify).
     """
-    flags   = pd.Series(False, index=df.index)
-    is_ni   = (df["finger"].astype(str).str.lower() == "noinfo").values
-    idxs    = list(df.index)
+    flags = pd.Series(False, index=df.index)
+    is_ni = (df["finger"].astype(str).str.lower() == "noinfo").values
+    idxs  = list(df.index)
+    n     = len(is_ni)
+
+    def flag_context(cluster_start: int, cluster_end: int) -> None:
+        count = 0
+        for j in range(cluster_start - 1, -1, -1):
+            if not is_ni[j]:
+                flags.iloc[idxs[j]] = True
+                count += 1
+                if count >= context_notes:
+                    break
+        count = 0
+        for j in range(cluster_end, n):
+            if not is_ni[j]:
+                flags.iloc[idxs[j]] = True
+                count += 1
+                if count >= context_notes:
+                    break
 
     run_start = None
     for i, ni in enumerate(is_ni):
@@ -236,12 +262,10 @@ def rule_noinfo_cluster(df: pd.DataFrame, min_cluster: int = 3) -> pd.Series:
                 run_start = i
         else:
             if run_start is not None and (i - run_start) >= min_cluster:
-                for j in range(run_start, i):
-                    flags.iloc[idxs[j]] = True
+                flag_context(run_start, i)
             run_start = None
-    if run_start is not None and (len(is_ni) - run_start) >= min_cluster:
-        for j in range(run_start, len(is_ni)):
-            flags.iloc[idxs[j]] = True
+    if run_start is not None and (n - run_start) >= min_cluster:
+        flag_context(run_start, n)
 
     return flags
 
@@ -361,7 +385,7 @@ RULES: dict[str, callable] = {
 }
 
 RULE_DESCRIPTIONS: dict[str, str] = {
-    "impossible_fingering":     "Physically impossible: finger cross w/o thumb, or span overreach",
+    "impossible_fingering":     "Physically impossible: finger cross w/o thumb (within 500 ms), or span overreach",
     "fast_jump":                "Fast position jump: hand blurry in video, MediaPipe inaccurate",
     "hand_overlap":             "Hand position overlap: L/R pitch regions intersect",
     "rapid_alternation":        "Rapid L/R alternation (tremolo): hand identity ambiguous",
@@ -374,7 +398,6 @@ RULE_DESCRIPTIONS: dict[str, str] = {
 DEFAULT_RULES = [
     "impossible_fingering",
     "fast_jump",
-    "hand_overlap",
     "noinfo_cluster",
 ]
 

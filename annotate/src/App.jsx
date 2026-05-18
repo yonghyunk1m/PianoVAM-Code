@@ -944,6 +944,12 @@ export default function App() {
                 title="Blind mode: hide every algorithmic hint (algo pick, imputed pick, candidates, suspect markers).">
           {blindMode ? '👁 Blind ON' : '👁 Blind OFF'}
         </button>
+        <a href={(() => { const p = new URLSearchParams(window.location.search); p.set('mode','hard'); return window.location.pathname + '?' + p.toString(); })()}
+           style={{ padding: '7px 14px', background: '#D32F2F', color: '#FFF',
+                    border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                    textDecoration: 'none', cursor: 'pointer' }}>
+          🔴 Hard Notes
+        </a>
         <button className="btn-secondary" onClick={() => setShowReview(true)}>
           Review queue
         </button>
@@ -1498,7 +1504,8 @@ function ReviewPanel({ data, verdicts, bookmarks, blindMode, onJump, onClose }) 
                   const algoLbl = n.algorithm_int
                     ? INT_TO_LABEL[n.algorithm_int]
                     : (n.algorithm_status === 'labeled' ? '—' : n.algorithm_status);
-                  const youLbl = v?.finger_label || '—';
+                  const humanV = classifyVerdict(v).human;
+                  const youLbl = humanV?.finger_label || '—';
                   return (
                     <tr key={i}>
                       <td className="muted">{i + 1}</td>
@@ -1509,8 +1516,8 @@ function ReviewPanel({ data, verdicts, bookmarks, blindMode, onJump, onClose }) 
                         <td className={n.algorithm_status === 'labeled'
                           ? 'algo-cell' : 'algo-cell ambig'}>{algoLbl}</td>
                       )}
-                      <td className={!blindMode && v && v.finger_int >= 1 && v.finger_int <= 10
-                        && v.finger_int !== n.algorithm_int
+                      <td className={!blindMode && humanV && humanV.finger_int >= 1 && humanV.finger_int <= 10
+                        && humanV.finger_int !== n.algorithm_int
                         ? 'human-cell mismatch' : 'human-cell'}>{youLbl}</td>
                       {isPriority && !blindMode && (
                         <td className="reason-cell">
