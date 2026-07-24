@@ -2156,3 +2156,365 @@ git push origin 260724-audit
 ```
 
 Expected: GitHub updates `260724-audit` to the final verified commit.
+
+## 21. Authoritative key-offset recovery design
+
+### 21.1 Production-data finding
+
+The first production run of Task 7 exposed a source-contract mismatch. All
+105 fingering files contain exactly:
+
+```text
+onset, note, hand, finger, velocity
+```
+
+They contain 508,621 notes but no key-release timestamps. The annotation
+application fills a missing display offset with `onset + 0.5` seconds. That
+value is a UI playback fallback: all 508,621 archived display notes have the
+same synthetic 0.5-second duration. It is forbidden as audit evidence.
+
+Original key offsets are mandatory. The official
+`PianoVAM/PianoVAM_v1` dataset contains native `TSV/*.tsv` files with:
+
+```text
+onset, key_offset, frame_offset, note, velocity
+```
+
+All 105 audited recording IDs have a native TSV at immutable dataset revision
+`7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8`. Only those 105 TSVs are needed;
+audio and video are not downloaded.
+
+### 21.2 Considered approaches
+
+1. **Pinned native TSV recovery — selected.** Download the official native
+   TSV at the immutable revision and use its original `key_offset`. This
+   preserves the dataset authors' timing representation and is the smallest
+   authoritative input.
+2. **Original MIDI reconstruction.** Parse note-on/note-off pairs from the
+   official MIDI. This is authoritative but adds tempo, pedal, track-merging,
+   and pairing decisions that are unnecessary while native TSV is available.
+   It remains a future cross-check, not the primary source.
+3. **Synthetic or inferred durations — rejected.** The Vite `+0.5` fallback,
+   nearest-neighbor timing, median durations, and interpolation are forbidden.
+
+### 21.3 Acquisition and provenance contract
+
+The unattended workflow downloads only:
+
+```text
+https://huggingface.co/datasets/PianoVAM/PianoVAM_v1/resolve/
+7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8/TSV/<recording>.tsv
+```
+
+for the exact 105 recording IDs already present in the fingering corpus.
+Downloads go to an ignored, revision-named source cache. A completed run
+records repository ID, immutable revision, relative source path, byte count,
+SHA-256, row count, and validation status for every file. Cache reuse is
+allowed only after the same validations pass.
+
+Network or source failure is fail-closed. Partial coverage, a moving
+`main` reference, an unknown extra recording, or a source whose identity
+cannot be proved must prevent study/report finalization. No fallback offset is
+substituted.
+
+### 21.4 Exact identity join
+
+For each recording, the native timing TSV and the fingering TSV must have the
+same row count. Both sides are keyed by:
+
+```text
+(recording_id, round(onset, 6), note)
+```
+
+This key is unique for all 508,621 current fingering rows. Velocity is an
+additional equality validator. The loader rejects:
+
+- missing or extra records;
+- duplicate identity keys on either side;
+- onset, pitch, or velocity disagreement;
+- nonfinite onset or key offset;
+- nonintegral/out-of-range pitch;
+- `key_offset < onset`; or
+- anything other than exact 105-recording and 508,621-row production
+  coverage.
+
+No nearest-neighbor or index-only join is permitted. The original
+`key_offset` is copied into canonical `offset_sec`; the five-column fingering
+files remain immutable.
+
+### 21.5 Eligibility and terminal gates
+
+Acquisition and identity validation occur before physical-rule, Noinfo,
+ground-truth, or report computation. Thus the production study never treats
+missing offsets as ordinary fingering errors.
+
+The existing integrity queue continues to catch genuinely malformed timing
+values after enrichment. Full-corpus and GT masks must use the same integrity
+eligibility for every fold-calibrated rule. In particular, GT upper-tail masks
+must be intersected with the GT mapping of the full eligibility mask; a rule
+cannot select a GT note that the corresponding full-corpus rule excludes.
+
+A terminal `SUCCESS.json` or `RECOMMENDATION_GATE_CLOSED.json` additionally
+requires:
+
+```text
+105 timing files
+508,621 exactly joined notes
+0 missing offsets
+0 identity mismatches
+0 synthetic offsets
+full/GT eligibility parity
+```
+
+PIG remains a separate validity gate. Authoritative offsets open physical
+timing evaluation; they do not authorize any invalidity rule that fails or
+cannot be checked against PIG.
+
+### 21.6 Acceptance tests
+
+The implementation must demonstrate RED then GREEN tests for:
+
+- pinned URL construction and exact recording-only acquisition;
+- cache hashing and reuse without network;
+- rejection of a moving revision or partial download;
+- exact native-TSV enrichment with original offsets;
+- rejection of row-count, duplicate-key, onset, pitch, velocity, and timing
+  mismatches;
+- proof that no code path substitutes `onset + 0.5`;
+- unchanged source fingering TSV hashes;
+- full/GT eligibility parity for upper-tail and queue masks;
+- exact production coverage in preflight, manifest, and report verification;
+  and
+- a full unattended rerun whose measured tables replace the invalid
+  all-integrity artifact.
+
+# Authoritative Key-Offset Recovery Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> `superpowers:subagent-driven-development` to implement this plan
+> task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Recover and validate the original PianoVAM key-release timestamps
+before computing physical, Noinfo, GT, or publication-audit results.
+
+**Architecture:** A focused acquisition module retrieves the official native
+TSVs at one immutable Hugging Face revision. A timing module validates and
+joins those inputs into canonical notes. The pipeline records provenance and
+requires exact timing coverage and GT/full eligibility parity before terminal
+markers.
+
+**Tech Stack:** Python 3, `urllib`, pandas, NumPy, pytest, YAML, SHA-256,
+React/Vite verification.
+
+## Global constraints
+
+- Never use `onset + 0.5`, inferred durations, or nearest-neighbor joins.
+- Never edit the 105 source fingering TSV files.
+- Download only official native TSVs for the exact audited recordings.
+- Pin revision `7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8`.
+- Fail closed unless all 105 files and all 508,621 notes validate exactly.
+- Preserve the independent PIG invalidity gate and exact 189-queue gates.
+
+### Task 8: Pinned timing acquisition and exact enrichment
+
+**Files:**
+
+- Create: `fingering_audit/timing.py`
+- Modify: `fingering_audit/acquire.py`
+- Modify: `fingering_audit/contracts.py`
+- Modify: `fingering_audit/config.py`
+- Modify: `fingering_audit/config/research.yaml`
+- Modify: `fingering_audit/canonical.py`
+- Test: `tests/fingering_audit/test_timing.py`
+- Test: `tests/fingering_audit/test_canonical.py`
+- Test: `tests/fingering_audit/test_config.py`
+
+**Interfaces:**
+
+- `ensure_authoritative_timing(config, recording_ids) -> TimingSource`
+  returns the pinned cache directory and one provenance row per recording.
+- `attach_authoritative_offsets(notes, timing_source) -> TimingJoin`
+  returns enriched canonical notes plus validated per-recording provenance.
+- `TimingJoin.complete` is true only for exact expected file and row coverage.
+
+- [ ] **Step 1: Write acquisition RED tests**
+
+Use a local HTTP fixture or injected downloader. Assert the URL contains the
+exact repository, 40-character revision, and requested recording path.
+Assert partial, wrong-revision, duplicate, and failed downloads raise before
+returning `TimingSource`. Assert a valid hashed cache is reused without a
+network call.
+
+- [ ] **Step 2: Run acquisition tests and verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_timing.py -k acquisition -v
+```
+
+Expected: FAIL because the timing interfaces do not exist.
+
+- [ ] **Step 3: Implement minimal pinned acquisition**
+
+Add immutable repository/revision/cache fields to `AuditConfig`, reject a
+non-40-hex revision, and implement exact-recording acquisition in
+`fingering_audit/acquire.py`. Write atomically to the ignored revision cache;
+calculate SHA-256 after download and on every reuse.
+
+- [ ] **Step 4: Write exact-join RED tests**
+
+Create small five-column fingering and native timing fixtures. Assert the
+returned `offset_sec` equals the native `key_offset`, not `onset + 0.5`.
+Individually assert rejection of row-count, duplicate-key, onset, pitch,
+velocity, nonfinite timing, and offset-before-onset mismatches.
+
+- [ ] **Step 5: Run join tests and verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_timing.py \
+  tests/fingering_audit/test_canonical.py -v
+```
+
+Expected: new join tests fail for the intended missing behavior.
+
+- [ ] **Step 6: Implement minimal exact enrichment**
+
+Implement strict six-decimal onset/pitch identity plus velocity and count
+validation in `fingering_audit/timing.py`. Update the canonical loader to
+accept only a complete `TimingSource` for authoritative runs and retain
+source-fingering hashes for immutability verification.
+
+- [ ] **Step 7: Verify GREEN and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_timing.py \
+  tests/fingering_audit/test_canonical.py \
+  tests/fingering_audit/test_config.py -q
+git diff --check
+git add fingering_audit tests/fingering_audit \
+  fingering_audit/config/research.yaml
+git commit -m "feat: recover authoritative PianoVAM offsets"
+```
+
+Expected: all focused tests pass and no source TSV is modified.
+
+### Task 9: Timing provenance and full/GT eligibility gates
+
+**Files:**
+
+- Modify: `fingering_audit/preflight.py`
+- Modify: `fingering_audit/study.py`
+- Modify: `fingering_audit/pipeline.py`
+- Modify: `fingering_audit/report.py`
+- Modify: `fingering_audit/manifest.py`
+- Test: `tests/fingering_audit/test_features.py`
+- Test: `tests/fingering_audit/test_manifest.py`
+- Test: `tests/fingering_audit/test_report.py`
+
+**Interfaces:**
+
+- `build_study` consumes fully enriched canonical notes.
+- `timing_provenance.csv` contains one validated row per recording.
+- Terminal reconciliations include exact timing files/rows, zero missing
+  offsets, source-hash immutability, and full/GT eligibility parity.
+
+- [ ] **Step 1: Write eligibility and terminal-gate RED tests**
+
+Add a malformed full note mapped to GT and prove an upper-tail GT mask cannot
+select it when the full mask is ineligible. Add missing/extra timing-file and
+row-count reconciliations and assert neither terminal marker is written.
+
+- [ ] **Step 2: Run gate tests and verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_features.py \
+  tests/fingering_audit/test_manifest.py \
+  tests/fingering_audit/test_report.py -v
+```
+
+Expected: new parity and timing-gate tests fail for the intended reasons.
+
+- [ ] **Step 3: Apply one shared eligibility mapping**
+
+Intersect every GT rule mask, including `_oof_upper_tail`, with the GT mapping
+of its full-corpus eligibility mask. Add direct parity reconciliation before
+report or terminal finalization.
+
+- [ ] **Step 4: Persist timing provenance and gates**
+
+Write `data/timing_provenance.csv`; include repository, revision, relative
+path, SHA-256, byte count, row count, and validation status. Add the six exact
+timing reconciliations from Section 21.5 and make report verification require
+them.
+
+- [ ] **Step 5: Verify GREEN and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest -q
+git diff --check
+git add fingering_audit tests/fingering_audit
+git commit -m "fix: gate audit on original timing coverage"
+```
+
+Expected: the complete Python suite passes with no terminal marker possible
+under partial timing coverage.
+
+### Task 10: Authoritative rerun, consolidated results, and delivery
+
+**Files:**
+
+- Modify: `docs/fingering-audit-complete.md`
+- Generate, ignored: authoritative TSV cache and
+  `artifacts/fingering_audit/<run-id>/`
+
+**Interfaces:**
+
+- Produces the exact physical/Noinfo workload-recall and all-ten-finger tables
+  from original key offsets.
+- Produces no recommended Vite queue unless both PIG and all reconciliations
+  pass.
+
+- [ ] **Step 1: Acquire and verify only the original TSV timing sources**
+
+Run the unattended acquisition path. Confirm 105 files, 508,621 exact joins,
+the pinned revision, and zero synthetic/missing offsets. Record all hashes in
+the run artifact.
+
+- [ ] **Step 2: Run all verification**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest -q
+./run_fingering_audit.sh --run-label authoritative-offset-audit
+/home/junhyungp/autofinger/.venv/bin/python -m fingering_audit report \
+  --verify-only
+npm --prefix annotate run test:audit-categories
+npm --prefix annotate run build
+```
+
+Expected: tests/build pass; report verification passes; with unavailable PIG,
+the truthful terminal marker is `RECOMMENDATION_GATE_CLOSED.json`.
+
+- [ ] **Step 3: Replace invalid production results**
+
+Update Sections 1, 10, 12, 13, 14, 17, 19, and 21 with the authoritative run
+ID, timing provenance, physical candidates versus enabled must-alerts,
+integrity records, every Noinfo fixed/calibrated variant, all strategy
+combinations, GT/assigned recall, precision, enrichment, incremental
+contribution, and all ten fingers. Label the earlier all-integrity run invalid
+and exclude it from conclusions.
+
+- [ ] **Step 4: Verify immutability, commit, review, and push**
+
+```bash
+git diff --check
+git diff --name-only -- PianoVAM_v1.0/Fingering/
+git status --short
+git add docs/fingering-audit-complete.md
+git commit -m "docs: record authoritative-offset audit results"
+```
+
+Expected: no source fingering TSV changes. External push occurs only after
+independent final review and fresh controller verification.
