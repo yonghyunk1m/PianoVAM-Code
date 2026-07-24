@@ -1,0 +1,4 @@
+rule_family,status,reason
+PIG validity/support,unavailable,authoritative PIG v1.02 annotations not present locally
+HaMeR note trajectories/candidate margins,unavailable,only calibration/pixel-point files found; no note-level candidates
+MediaPipe temporal confidence,unavailable,source TSV has labels but no per-frame confidence table

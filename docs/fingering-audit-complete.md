@@ -17,8 +17,19 @@ available; therefore no recommendation or Vite audit queue is published.
 
 The exact generated physical, integrity, fixed/calibrated Noinfo, 189 strategy,
 GT/assigned recall, precision/enrichment/incremental, methods, and all-ten-finger
-tables are in the run artifacts at
+tables are committed as GitHub-viewable CSV files in
+[`docs/fingering-audit-results/`](fingering-audit-results/). They are a byte-for-byte
+snapshot of the final run's `results/` directory at
 `artifacts/fingering_audit/20260724T165823Z-authoritative-offset-audit-final-e015b28b/`.
+The primary tables are
+[`filter_sets.csv`](fingering-audit-results/filter_sets.csv),
+[`individual_filters.csv`](fingering-audit-results/individual_filters.csv),
+[`noinfo_sensitivity.csv`](fingering-audit-results/noinfo_sensitivity.csv),
+[`queue_summary.csv`](fingering-audit-results/queue_summary.csv),
+[`queue_workload_per_finger.csv`](fingering-audit-results/queue_workload_per_finger.csv),
+and [`per_finger.csv`](fingering-audit-results/per_finger.csv); the directory also
+contains the overlap, Pareto, per-recording, threshold, error-type, exclusion,
+and general workload tables.
 Headline rows:
 
 | set | hard notes | hard % | GT recall | assigned recall | precision | enrichment | incremental errors |
