@@ -13,6 +13,7 @@ from ManualCheck.hard_part_selector import (
 )
 from fingering_audit import report as report_module
 from fingering_audit import pipeline as pipeline_module
+from fingering_audit import acquire as acquire_module
 from fingering_audit.canonical import load_pianovam_notes, load_pig_canonical
 from fingering_audit.config import load_config
 from fingering_audit.contracts import AuditConfig, PigValidation
@@ -38,6 +39,32 @@ CALIBRATED_VARIANTS = {
     for quantile in (995, 990, 975)
 }
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _install_local_timing(monkeypatch, tmp_path):
+    """Route pipeline acquisition through the checked-in native timing fixture."""
+    native = (
+        "# onset\tkey_offset\tframe_offset\tnote\tvelocity\n"
+        "0.000000\t0.100000\t0.100000\t60\t80\n"
+        "0.125000\t0.225000\t0.225000\t62\t82\n"
+        "0.250000\t0.350000\t0.350000\t64\t84\n"
+        "0.375000\t0.475000\t0.475000\t65\t86\n"
+    )
+
+    def local_acquire(config, recording_ids):
+        def downloader(_url, destination):
+            destination.write_text(native, encoding="utf-8")
+
+        return acquire_module.ensure_authoritative_timing(
+            replace(
+                config,
+                timing_cache_dir=tmp_path.parent / f"{tmp_path.name}-timing-cache",
+            ),
+            recording_ids,
+            downloader=downloader,
+        )
+
+    monkeypatch.setattr(pipeline_module, "ensure_authoritative_timing", local_acquire)
 APPROVED_BASE_RISK_IDS = (
     "mandatory_missing",
     "legacy_current_default",
@@ -170,13 +197,14 @@ def test_pig_present_run_persists_and_passes_validated_physical_policy(
         load_config(FIXTURES / "research-minimal.yaml"),
         artifact_root=tmp_path,
     )
+    _install_local_timing(monkeypatch, tmp_path)
     observed = {}
     original_build = pipeline_module.build_study
     original_gate = pipeline_module.enforce_recommendation_gate
 
-    def tracking_build(config, physical_policy=None):
+    def tracking_build(config, physical_policy=None, notes=None):
         observed["policy"] = physical_policy
-        return original_build(config, physical_policy=physical_policy)
+        return original_build(config, physical_policy=physical_policy, notes=notes)
 
     def tracking_gate(validations, rule_ids):
         observed["validated_rule_ids"] = tuple(rule_ids)
@@ -207,11 +235,12 @@ def test_pig_absent_run_keeps_diagnostics_and_closes_success_gate(
         artifact_root=tmp_path,
         pig_search_roots=(),
     )
+    _install_local_timing(monkeypatch, tmp_path)
     observed = {}
     original_build = pipeline_module.build_study
 
-    def tracking_build(config, physical_policy=None):
-        study = original_build(config, physical_policy=physical_policy)
+    def tracking_build(config, physical_policy=None, notes=None):
+        study = original_build(config, physical_policy=physical_policy, notes=notes)
         observed["policy"] = physical_policy
         observed["study"] = study
         return study
@@ -248,11 +277,12 @@ def test_pipeline_rejects_gt_only_missing_selection_before_reports(
         load_config(FIXTURES / "research-minimal.yaml"),
         artifact_root=tmp_path,
     )
+    _install_local_timing(monkeypatch, tmp_path)
     original_build = pipeline_module.build_study
     missing = next(iter(EXPECTED_QUEUE_SELECTION_IDS))
 
-    def build_with_missing_gt_selection(config, physical_policy=None):
-        study = original_build(config, physical_policy=physical_policy)
+    def build_with_missing_gt_selection(config, physical_policy=None, notes=None):
+        study = original_build(config, physical_policy=physical_policy, notes=notes)
         selections_gt = dict(study.selections_gt)
         selections_gt.pop(missing)
         return replace(study, selections_gt=selections_gt)
@@ -288,6 +318,7 @@ def test_failed_physical_validation_emits_diagnostics_and_closes_gate(
         load_config(FIXTURES / "research-minimal.yaml"),
         artifact_root=tmp_path,
     )
+    _install_local_timing(monkeypatch, tmp_path)
     pig_root = FIXTURES / "PIG/PianoFingeringDataset_v1.02"
     policy = derive_physical_policy(load_pig_canonical(pig_root), pig_root)
     failed_rule = "simultaneous_pair_span"
