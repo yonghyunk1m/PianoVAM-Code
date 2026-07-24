@@ -12,6 +12,7 @@ from fingering_audit.contracts import (
     StrategyKind,
 )
 from fingering_audit.filters.strategies import (
+    combine_mandatory,
     evaluate_filter_set,
     validate_filter_set,
 )
@@ -76,3 +77,23 @@ def test_exploratory_rule_cannot_select_alone():
     filter_set = FilterSet("x-only", StrategyKind.BLACKLIST, ("x",), "any")
     with pytest.raises(ValueError, match="exploratory"):
         validate_filter_set(filter_set, results)
+
+
+def test_mandatory_union_is_complete_and_integrity_disjoint():
+    result = combine_mandatory(
+        risk=pd.Series([False, True, False, False]),
+        physical=pd.Series([True, False, False, False]),
+        noinfo=pd.Series([False, False, True, False]),
+        integrity=pd.Series([False, False, False, True]),
+    )
+    assert result.tolist() == [True, True, True, False]
+
+
+def test_mandatory_union_rejects_overlap_with_integrity():
+    with pytest.raises(ValueError, match="integrity"):
+        combine_mandatory(
+            risk=pd.Series([False]),
+            physical=pd.Series([True]),
+            noinfo=pd.Series([False]),
+            integrity=pd.Series([True]),
+        )

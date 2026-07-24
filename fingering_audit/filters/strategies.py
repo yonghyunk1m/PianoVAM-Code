@@ -12,6 +12,25 @@ from ..contracts import (
 )
 
 
+def combine_mandatory(
+    *,
+    risk: pd.Series,
+    physical: pd.Series,
+    noinfo: pd.Series,
+    integrity: pd.Series,
+) -> pd.Series:
+    masks = [
+        pd.Series(value).fillna(False).astype(bool).reset_index(drop=True)
+        for value in (risk, physical, noinfo, integrity)
+    ]
+    risk_mask, physical_mask, noinfo_mask, integrity_mask = masks
+    if (physical_mask & integrity_mask).any():
+        raise ValueError("physical and integrity masks overlap")
+    if (noinfo_mask & integrity_mask).any():
+        raise ValueError("noinfo context and integrity masks overlap")
+    return (risk_mask | physical_mask | noinfo_mask) & ~integrity_mask
+
+
 def validate_filter_set(
     filter_set: FilterSet, rule_results: Mapping[str, RuleResult]
 ) -> None:

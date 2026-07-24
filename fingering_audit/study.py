@@ -19,8 +19,15 @@ from .evaluation.metrics import (
     per_finger_metrics,
     workload_per_predicted_finger,
 )
+from .features.audit_flags import (
+    compute_audit_flags,
+    local_missingness_features,
+    noinfo_context_mask,
+)
 from .features.ergonomic import ergonomic_features
 from .features.model import disagreement_features, hmm_features
+from .filters.strategies import combine_mandatory
+from .physical_policy import PhysicalPolicy
 
 
 SPAN_BOUNDS = {
@@ -44,6 +51,14 @@ SPAN_BOUNDS = {
     },
 }
 
+NOINFO_VARIANTS = {
+    f"ni_k{run}_r{radius}": (run, radius)
+    for run in (2, 3, 5)
+    for radius in (1, 2, 4)
+}
+NOINFO_QUANTILES = (0.995, 0.990, 0.975)
+NOINFO_WINDOWS = (5, 9, 17)
+
 
 @dataclass
 class StudyData:
@@ -54,6 +69,9 @@ class StudyData:
     selections_gt: Mapping[str, pd.Series]
     set_metadata: pd.DataFrame
     fold_thresholds: pd.DataFrame
+    queue_masks_full: Mapping[str, pd.Series]
+    queue_masks_gt: Mapping[str, pd.Series]
+    noinfo_sensitivity: pd.DataFrame
 
 
 def _span_mask(features: pd.DataFrame, variant: str) -> pd.Series:
@@ -84,6 +102,161 @@ def _legacy_default_mask(notes: pd.DataFrame) -> pd.Series:
 def _map_to_gt(mask: pd.Series, notes: pd.DataFrame, labels: pd.DataFrame) -> pd.Series:
     lookup = pd.Series(mask.to_numpy(dtype=bool), index=notes["note_id"])
     return labels["note_id"].map(lookup).fillna(False).astype(bool)
+
+
+def _oof_noinfo_tail(
+    notes: pd.DataFrame,
+    labels: pd.DataFrame,
+    feature_values: pd.Series,
+    *,
+    quantile: float,
+) -> tuple[pd.Series, pd.Series, pd.DataFrame]:
+    values = pd.Series(feature_values).replace([np.inf, -np.inf], np.nan)
+    score_by_id = pd.Series(values.to_numpy(), index=notes["note_id"])
+    labeled_score = labels["note_id"].map(score_by_id)
+    gt_mask = pd.Series(False, index=labels.index)
+    threshold_rows = []
+    fold_thresholds = []
+    for held_out in sorted(labels["recording_id"].unique()):
+        train = labels["recording_id"].ne(held_out)
+        train_scores = labeled_score.loc[train]
+        train_scores = train_scores.loc[train_scores.gt(0)].dropna()
+        threshold = (
+            float(train_scores.quantile(quantile))
+            if len(train_scores)
+            else float("inf")
+        )
+        test = labels["recording_id"].eq(held_out)
+        gt_mask.loc[test] = (
+            labeled_score.loc[test].ge(threshold).fillna(False)
+        )
+        fold_thresholds.append(threshold)
+        threshold_rows.append(
+            {
+                "held_out_recording": held_out,
+                "quantile": quantile,
+                "threshold": threshold,
+                "train_nonzero_notes": int(len(train_scores)),
+            }
+        )
+    deployment_threshold = (
+        float(np.median(fold_thresholds))
+        if fold_thresholds
+        else float("inf")
+    )
+    assigned = (
+        notes["pred_hand"].isin(["L", "R"])
+        & notes["pred_finger"].between(1, 5).fillna(False)
+    )
+    full_mask = values.ge(deployment_threshold).fillna(False)
+    return (
+        (full_mask & assigned).reset_index(drop=True),
+        gt_mask.reset_index(drop=True),
+        pd.DataFrame.from_records(threshold_rows),
+    )
+
+
+def _physical_candidate_masks(
+    notes: pd.DataFrame,
+    physical_policy: PhysicalPolicy | None,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    audit_notes = notes.copy()
+    if "compound_fingering" not in audit_notes:
+        audit_notes["compound_fingering"] = False
+    boundaries = (
+        physical_policy.span_boundaries
+        if physical_policy is not None
+        else None
+    )
+    flags = compute_audit_flags(audit_notes, boundaries)
+    integrity = flags.integrity.reset_index(drop=True).astype(bool)
+    diagnostic = (
+        flags.physical_candidate.reset_index(drop=True).astype(bool)
+        & ~integrity
+    )
+    must_alert = pd.Series(False, index=notes.index)
+    if physical_policy is not None:
+        enabled = physical_policy.enabled_rules
+        if "simultaneous_same_finger_different_pitch" in enabled:
+            must_alert |= flags.same_finger_candidate.reset_index(drop=True)
+        if "simultaneous_pair_span" in enabled:
+            must_alert |= flags.span_candidate.reset_index(drop=True)
+    return diagnostic, must_alert.astype(bool) & ~integrity, integrity
+
+
+def _queue_masks(
+    notes: pd.DataFrame,
+    labels: pd.DataFrame,
+    missingness: pd.DataFrame,
+    physical_policy: PhysicalPolicy | None,
+) -> tuple[dict[str, pd.Series], dict[str, pd.Series], pd.DataFrame]:
+    diagnostic, physical, integrity = _physical_candidate_masks(
+        notes, physical_policy
+    )
+    full: dict[str, pd.Series] = {
+        "physical_candidate_diagnostic": diagnostic,
+        "physical_must_alert": physical,
+        "data_integrity_must_resolve": integrity,
+    }
+    sensitivity_rows: list[dict] = []
+    for variant, (min_run, radius) in NOINFO_VARIANTS.items():
+        full[variant] = (
+            noinfo_context_mask(notes, min_run=min_run, radius=radius)
+            .reset_index(drop=True)
+            .astype(bool)
+            & ~integrity
+        )
+        sensitivity_rows.append(
+            {
+                "calibration": "fixed",
+                "variant": variant,
+                "min_run": min_run,
+                "radius": radius,
+                "window": pd.NA,
+                "quantile": np.nan,
+                "held_out_recording": pd.NA,
+                "threshold": np.nan,
+                "train_nonzero_notes": pd.NA,
+            }
+        )
+
+    gt = {
+        name: _map_to_gt(mask, notes, labels)
+        for name, mask in full.items()
+    }
+    assigned_gt = (
+        labels["pred_hand"].isin(["L", "R"])
+        & labels["pred_finger"].between(1, 5).fillna(False)
+    )
+    for window in NOINFO_WINDOWS:
+        feature_name = f"noinfo_fraction_w{window}"
+        for quantile in NOINFO_QUANTILES:
+            suffix = f"{int(round(quantile * 1000)):03d}"
+            variant = f"ni_w{window}_q{suffix}"
+            full_mask, gt_mask, rows = _oof_noinfo_tail(
+                notes,
+                labels,
+                missingness[feature_name],
+                quantile=quantile,
+            )
+            full[variant] = full_mask & ~integrity
+            gt[variant] = (
+                gt_mask
+                & assigned_gt.reset_index(drop=True)
+                & ~gt["data_integrity_must_resolve"]
+            )
+            for row in rows.to_dict("records"):
+                sensitivity_rows.append(
+                    {
+                        "calibration": "training_fold",
+                        "variant": variant,
+                        "min_run": pd.NA,
+                        "radius": pd.NA,
+                        "window": window,
+                        **row,
+                    }
+                )
+    return full, gt, pd.DataFrame.from_records(sensitivity_rows)
 
 
 def _oof_upper_tail(
@@ -217,6 +390,22 @@ def _combine(masks: Mapping[str, pd.Series]) -> dict[str, pd.Series]:
     }
 
 
+def _combined_sets(
+    risk_sets: Mapping[str, pd.Series],
+    queue_masks: Mapping[str, pd.Series],
+) -> dict[str, pd.Series]:
+    return {
+        f"{risk_id}__{variant}": combine_mandatory(
+            risk=risk,
+            physical=queue_masks["physical_must_alert"],
+            noinfo=queue_masks[variant],
+            integrity=queue_masks["data_integrity_must_resolve"],
+        )
+        for risk_id, risk in risk_sets.items()
+        for variant in NOINFO_VARIANTS
+    }
+
+
 def _metadata() -> pd.DataFrame:
     rows = [
         ("mandatory_missing", "integrity", "physical_invariant", "schema completeness"),
@@ -239,10 +428,44 @@ def _metadata() -> pd.DataFrame:
         ("hy_two_of_three_families", "hybrid", "mixed", "at least 2 of ergonomic/model/context"),
         ("hy_hierarchical", "hybrid", "mixed", "MaxPrac direct; central risks need HMM"),
     ]
-    return pd.DataFrame(rows, columns=["set_id", "strategy", "evidence_grade", "threshold_summary"])
+    base = pd.DataFrame(
+        rows,
+        columns=[
+            "set_id",
+            "strategy",
+            "evidence_grade",
+            "threshold_summary",
+        ],
+    )
+    combined_rows = []
+    for row in base.to_dict("records"):
+        for variant, (min_run, radius) in NOINFO_VARIANTS.items():
+            combined_rows.append(
+                {
+                    **row,
+                    "set_id": f"{row['set_id']}__{variant}",
+                    "threshold_summary": (
+                        f"{row['threshold_summary']}; physical must-alert; "
+                        f"Noinfo k={min_run}, radius={radius}"
+                    ),
+                    "base_risk_method": row["set_id"],
+                    "noinfo_min_run": min_run,
+                    "noinfo_context_radius": radius,
+                }
+            )
+    base["base_risk_method"] = base["set_id"]
+    base["noinfo_min_run"] = pd.NA
+    base["noinfo_context_radius"] = pd.NA
+    return pd.concat(
+        [base, pd.DataFrame.from_records(combined_rows)],
+        ignore_index=True,
+    )
 
 
-def build_study(config: AuditConfig) -> StudyData:
+def build_study(
+    config: AuditConfig,
+    physical_policy: PhysicalPolicy | None = None,
+) -> StudyData:
     notes = load_pianovam_notes(config.pianovam_fingering_dir)
     gt = load_ground_truth(config.ground_truth_module)
     labels = label_errors(attach_ground_truth(notes, gt))
@@ -262,24 +485,106 @@ def build_study(config: AuditConfig) -> StudyData:
         axis=1,
     )
     disagreement = disagreement_features(disagreement_input)
+    missingness = local_missingness_features(notes)
     features = pd.concat(
         [
             features.reset_index(drop=True),
             hmm.drop(columns=["note_id"]).reset_index(drop=True),
             disagreement.drop(columns=["note_id"]).reset_index(drop=True),
+            missingness.reset_index(drop=True),
         ],
         axis=1,
     )
     rule_full, rule_gt, thresholds = _rule_masks(notes, labels, features)
+    queue_full, queue_gt, noinfo_sensitivity = _queue_masks(
+        notes,
+        labels,
+        missingness,
+        physical_policy,
+    )
+    risk_full = _combine(rule_full)
+    risk_gt = _combine(rule_gt)
     return StudyData(
         notes=notes,
         labels=labels,
         features=features,
-        selections_full=_combine(rule_full),
-        selections_gt=_combine(rule_gt),
+        selections_full={
+            **risk_full,
+            **_combined_sets(risk_full, queue_full),
+        },
+        selections_gt={
+            **risk_gt,
+            **_combined_sets(risk_gt, queue_gt),
+        },
         set_metadata=_metadata(),
         fold_thresholds=thresholds,
+        queue_masks_full=queue_full,
+        queue_masks_gt=queue_gt,
+        noinfo_sensitivity=noinfo_sensitivity,
     )
+
+
+def _summarize_noinfo_sensitivity(study: StudyData) -> pd.DataFrame:
+    assigned_full = study.notes["pred_finger_id"].notna()
+    assigned_gt = study.labels["pred_finger_id"].notna()
+    physical_full = study.queue_masks_full["physical_must_alert"]
+    physical_gt = study.queue_masks_gt["physical_must_alert"]
+    integrity_full = study.queue_masks_full["data_integrity_must_resolve"]
+    integrity_gt = study.queue_masks_gt["data_integrity_must_resolve"]
+    empty_full = pd.Series(False, index=study.notes.index)
+    empty_gt = pd.Series(False, index=study.labels.index)
+    errors = study.labels["exact_error"].fillna(False).astype(bool)
+    rows = []
+    for sensitivity in study.noinfo_sensitivity.to_dict("records"):
+        variant = sensitivity["variant"]
+        noinfo_full = study.queue_masks_full[variant]
+        noinfo_gt = study.queue_masks_gt[variant]
+        selected_full = combine_mandatory(
+            risk=empty_full,
+            physical=physical_full,
+            noinfo=noinfo_full,
+            integrity=integrity_full,
+        )
+        selected_gt = combine_mandatory(
+            risk=empty_gt,
+            physical=physical_gt,
+            noinfo=noinfo_gt,
+            integrity=integrity_gt,
+        )
+        metric = compute_metrics(
+            selected_gt, study.labels, set_id=variant
+        )
+        assigned_metric = compute_metrics(
+            selected_gt.loc[assigned_gt].reset_index(drop=True),
+            study.labels.loc[assigned_gt].reset_index(drop=True),
+            set_id=variant,
+        )
+        incremental_full = noinfo_full & ~physical_full & ~integrity_full
+        incremental_gt = noinfo_gt & ~physical_gt & ~integrity_gt
+        rows.append(
+            {
+                **sensitivity,
+                "hard_count": int(selected_full.sum()),
+                "hard_percentage_all_notes": float(selected_full.mean()),
+                "hard_percentage_assigned_notes": (
+                    float((selected_full & assigned_full).sum() / assigned_full.sum())
+                    if assigned_full.any()
+                    else np.nan
+                ),
+                "gt_error_recall": metric.values["error_recall"],
+                "assigned_gt_error_recall": assigned_metric.values["error_recall"],
+                "gt_precision": metric.values["precision"],
+                "assigned_gt_precision": assigned_metric.values["precision"],
+                "error_enrichment": metric.values["enrichment"],
+                "incremental_count_beyond_physical": int(
+                    incremental_full.sum()
+                ),
+                "incremental_errors_beyond_physical": int(
+                    (incremental_gt & errors).sum()
+                ),
+            }
+        )
+    return pd.DataFrame.from_records(rows)
 
 
 def summarize_study(
@@ -376,4 +681,5 @@ def summarize_study(
         "error_types": pd.DataFrame.from_records(error_types),
         "overlap_matrix": overlap,
         "threshold_sensitivity": study.fold_thresholds,
+        "noinfo_sensitivity": _summarize_noinfo_sensitivity(study),
     }
