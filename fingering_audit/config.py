@@ -95,6 +95,12 @@ def load_config(path: Path) -> AuditConfig:
 
 
 def discover_paths(config: AuditConfig) -> AuditConfig:
+    artifact = config.artifact_root.resolve()
+    timing_cache = config.timing_cache_dir.resolve()
+    if _is_within(timing_cache, artifact) or _is_within(artifact, timing_cache):
+        raise ValueError(
+            f"timing cache/artifact overlap: {timing_cache} and {artifact}"
+        )
     inputs = (
         config.pianovam_fingering_dir.resolve(),
         config.ground_truth_module.resolve(),
@@ -102,7 +108,6 @@ def discover_paths(config: AuditConfig) -> AuditConfig:
         *(p.resolve() for p in config.detector_search_roots),
         config.timing_cache_dir.resolve(),
     )
-    artifact = config.artifact_root.resolve()
     for source in inputs:
         source_dir = source if source.is_dir() or not source.suffix else source.parent
         if _is_within(artifact, source_dir):

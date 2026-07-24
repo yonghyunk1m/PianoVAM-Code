@@ -254,3 +254,74 @@ def test_exact_join_rejects_recording_coverage_mismatch(tmp_path):
 
     with pytest.raises(ValueError, match="recording coverage"):
         attach_authoritative_offsets(notes, source)
+
+
+@pytest.mark.parametrize(
+    ("source_change", "provenance_column", "provenance_value"),
+    [
+        (
+            {"repository_id": "Caller/Relabeled"},
+            "repository_id",
+            "Caller/Relabeled",
+        ),
+        (
+            {"revision": "a" * 40},
+            "revision",
+            "a" * 40,
+        ),
+    ],
+)
+def test_exact_join_independently_rejects_relabeled_source_identity(
+    tmp_path, source_change, provenance_column, provenance_value
+):
+    source, _ = _source(
+        tmp_path,
+        HEADER + "1.000000\t1.125000\t1.200000\t60\t80\n",
+    )
+    provenance = source.provenance.copy()
+    provenance[provenance_column] = provenance_value
+    forged = replace(source, provenance=provenance, **source_change)
+    notes = _notes([{"onset": 1.0, "note": 60, "velocity": 80}])
+
+    with pytest.raises(ValueError, match="official pinned"):
+        attach_authoritative_offsets(notes, forged)
+
+
+def test_exact_join_rejects_absolute_or_misplaced_source_paths(tmp_path):
+    source, _ = _source(
+        tmp_path,
+        HEADER + "1.000000\t1.125000\t1.200000\t60\t80\n",
+    )
+    notes = _notes([{"onset": 1.0, "note": 60, "velocity": 80}])
+    original = source.cache_dir / "TSV" / "take.tsv"
+    misplaced = source.cache_dir / "other" / "take.tsv"
+    misplaced.parent.mkdir()
+    misplaced.write_bytes(original.read_bytes())
+
+    for replacement_path in (str(original), "other/take.tsv"):
+        provenance = source.provenance.copy()
+        provenance["relative_source_path"] = replacement_path
+        forged = replace(source, provenance=provenance)
+        with pytest.raises(ValueError, match="exact relative source path"):
+            attach_authoritative_offsets(notes, forged)
+
+
+def test_exact_join_preserves_arbitrary_dataframe_index(tmp_path):
+    source, _ = _source(
+        tmp_path,
+        HEADER
+        + "1.000000\t1.125000\t1.200000\t60\t80\n"
+        + "2.000000\t2.250000\t2.300000\t62\t81\n",
+    )
+    notes = _notes(
+        [
+            {"onset": 1.0, "note": 60, "velocity": 80},
+            {"onset": 2.0, "note": 62, "velocity": 81},
+        ]
+    )
+    notes.index = pd.Index(["first-note", "second-note"], name="source_label")
+
+    joined = attach_authoritative_offsets(notes, source)
+
+    assert joined.notes.index.tolist() == ["first-note", "second-note"]
+    assert joined.notes["offset_sec"].tolist() == [1.125, 2.25]

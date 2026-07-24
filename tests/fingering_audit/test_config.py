@@ -75,6 +75,33 @@ def test_source_output_overlap_is_rejected(tmp_path):
         )
 
 
+@pytest.mark.parametrize("cache_inside_artifact", [True, False])
+def test_timing_cache_and_artifacts_must_not_overlap(
+    tmp_path, cache_inside_artifact
+):
+    cfg = load_config(FIXTURES / "research-minimal.yaml")
+    source = tmp_path / "input"
+    source.mkdir()
+    outer = tmp_path / "generated"
+    if cache_inside_artifact:
+        artifact_root = outer
+        timing_cache_dir = outer / "timing-cache"
+    else:
+        timing_cache_dir = outer
+        artifact_root = outer / "reports"
+
+    with pytest.raises(ValueError, match="timing cache/artifact overlap"):
+        discover_paths(
+            replace(
+                cfg,
+                repository_root=tmp_path,
+                pianovam_fingering_dir=source,
+                artifact_root=artifact_root,
+                timing_cache_dir=timing_cache_dir,
+            )
+        )
+
+
 def test_preflight_counts_fixture_inputs():
     cfg = load_config(FIXTURES / "research-minimal.yaml")
     summary = preflight_summary(cfg)

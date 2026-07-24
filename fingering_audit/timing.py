@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .acquire import PINNED_TIMING_REPOSITORY, PINNED_TIMING_REVISION
 from .contracts import TimingJoin, TimingSource
 
 
@@ -35,27 +36,46 @@ def _native_timing(path: Path) -> pd.DataFrame:
 def _validated_source_rows(timing_source: TimingSource) -> pd.DataFrame:
     if not timing_source.complete:
         raise ValueError("authoritative TimingSource must be complete")
+    if (
+        timing_source.repository_id != PINNED_TIMING_REPOSITORY
+        or timing_source.revision != PINNED_TIMING_REVISION
+    ):
+        raise ValueError(
+            "TimingSource is not the official pinned repository and revision"
+        )
     provenance = timing_source.provenance.copy()
     missing = _PROVENANCE_COLUMNS - set(provenance)
     if missing:
         raise ValueError(f"timing provenance missing columns: {sorted(missing)}")
     expected = set(timing_source.recording_ids)
     if (
-        len(provenance) != len(expected)
+        len(timing_source.recording_ids) != len(expected)
+        or len(provenance) != len(expected)
         or provenance["recording_id"].duplicated().any()
         or set(provenance["recording_id"]) != expected
     ):
         raise ValueError("timing provenance recording coverage is incomplete")
     if (
-        not provenance["repository_id"].eq(timing_source.repository_id).all()
-        or not provenance["revision"].eq(timing_source.revision).all()
+        not provenance["repository_id"].eq(PINNED_TIMING_REPOSITORY).all()
+        or not provenance["revision"].eq(PINNED_TIMING_REVISION).all()
         or not provenance["validation_status"].eq("acquisition_valid").all()
     ):
-        raise ValueError("timing provenance identity is invalid")
+        raise ValueError(
+            "timing provenance is not the official pinned source identity"
+        )
 
     root = timing_source.cache_dir.resolve()
+    if root.name != PINNED_TIMING_REVISION:
+        raise ValueError("timing source is outside expected cache layout")
     for row in provenance.itertuples(index=False):
-        path = (root / row.relative_source_path).resolve()
+        expected_relative = Path("TSV") / f"{row.recording_id}.tsv"
+        relative_path = Path(row.relative_source_path)
+        if relative_path != expected_relative or relative_path.is_absolute():
+            raise ValueError(
+                f"{row.recording_id}: exact relative source path required "
+                f"({expected_relative.as_posix()})"
+            )
+        path = (root / expected_relative).resolve()
         try:
             path.relative_to(root)
         except ValueError as exc:
@@ -109,8 +129,9 @@ def attach_authoritative_offsets(
     provenance_by_id = provenance.set_index("recording_id", drop=False)
     for recording_id in timing_source.recording_ids:
         note_mask = result["recording_id"].astype(str).eq(recording_id)
-        fingering = result.loc[
-            note_mask, ["onset_sec", "pitch", "velocity"]
+        result_positions = np.flatnonzero(note_mask.to_numpy())
+        fingering = result.iloc[result_positions][
+            ["onset_sec", "pitch", "velocity"]
         ].copy()
         source_row = provenance_by_id.loc[recording_id]
         source_path = (
@@ -165,7 +186,7 @@ def attach_authoritative_offsets(
                 "_onset_key": np.round(fingering_onset, 6),
                 "_pitch_key": fingering_pitch.astype(np.int64),
                 "_velocity_fingering": fingering_velocity.astype(np.int64),
-                "_result_index": fingering.index.to_numpy(),
+                "_result_position": result_positions,
             }
         )
         native_keys = pd.DataFrame(
@@ -194,8 +215,10 @@ def attach_authoritative_offsets(
             matched["_velocity_native"]
         ).all():
             raise ValueError(f"{recording_id}: velocity mismatch")
-        result.loc[
-            matched["_result_index"].astype(int), "offset_sec"
+        offset_column = result.columns.get_loc("offset_sec")
+        result.iloc[
+            matched["_result_position"].astype(int).to_numpy(),
+            offset_column,
         ] = matched["_native_offset"].to_numpy()
         joined_rows.append(
             {
