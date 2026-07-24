@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Mapping
 
 import pandas as pd
@@ -38,13 +39,25 @@ def compute_audit_flags(
             reason_sets[index].add("missing_or_invalid_hand")
         if pd.isna(finger.loc[index]) or not 1 <= finger.loc[index] <= 5:
             reason_sets[index].add("missing_or_invalid_finger")
+        elif not float(finger.loc[index]).is_integer():
+            reason_sets[index].add("non_integral_finger")
         if pd.isna(pitch.loc[index]) or not 0 <= pitch.loc[index] <= 127:
             reason_sets[index].add("missing_or_invalid_pitch")
+        elif not float(pitch.loc[index]).is_integer():
+            reason_sets[index].add("non_integral_pitch")
         if pd.isna(onset.loc[index]):
             reason_sets[index].add("missing_onset")
+        elif not isfinite(onset.loc[index]):
+            reason_sets[index].add("non_finite_onset")
         if pd.isna(offset.loc[index]):
             reason_sets[index].add("missing_offset")
-        elif not pd.isna(onset.loc[index]) and offset.loc[index] < onset.loc[index]:
+        elif not isfinite(offset.loc[index]):
+            reason_sets[index].add("non_finite_offset")
+        elif (
+            not pd.isna(onset.loc[index])
+            and isfinite(onset.loc[index])
+            and offset.loc[index] < onset.loc[index]
+        ):
             reason_sets[index].add("offset_before_onset")
     integrity = pd.Series(
         [bool(value) for value in reason_sets], index=work.index
