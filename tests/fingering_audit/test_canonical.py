@@ -1,6 +1,9 @@
 from pathlib import Path
+from dataclasses import replace
+import hashlib
 
 import pandas as pd
+import pytest
 
 from fingering_audit.canonical import (
     attach_ground_truth,
@@ -8,6 +11,8 @@ from fingering_audit.canonical import (
     load_pianovam_notes,
 )
 from fingering_audit.contracts import AuditConfig
+from fingering_audit.acquire import ensure_authoritative_timing
+from fingering_audit.config import load_config
 from fingering_audit.evaluation.labels import label_errors
 from fingering_audit.features.audit_flags import compute_audit_flags
 from fingering_audit.study import build_study
@@ -37,6 +42,56 @@ def test_canonical_loader_does_not_iterate_rows(monkeypatch):
     monkeypatch.setattr(pd.DataFrame, "iterrows", forbidden)
     notes = load_pianovam_notes(FIXTURES / "pianovam")
     assert len(notes) == 4
+
+
+def test_authoritative_loader_enriches_offsets_and_retains_source_hash(tmp_path):
+    fingering_dir = tmp_path / "fingering"
+    fingering_dir.mkdir()
+    source_path = fingering_dir / "take.tsv"
+    source_path.write_text(
+        "onset\tnote\thand\tfinger\tvelocity\n"
+        "1.000000\t60\tR\t1\t80\n",
+        encoding="utf-8",
+    )
+    before = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    config = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        timing_cache_dir=tmp_path / "cache",
+    )
+
+    def downloader(_url, destination):
+        destination.write_text(
+            "# onset\tkey_offset\tframe_offset\tnote\tvelocity\n"
+            "1.000000\t1.125000\t1.200000\t60\t80\n",
+            encoding="utf-8",
+        )
+
+    timing_source = ensure_authoritative_timing(
+        config, ["take"], downloader=downloader
+    )
+    notes = load_pianovam_notes(fingering_dir, timing_source=timing_source)
+
+    assert notes["offset_sec"].tolist() == [1.125]
+    assert notes["source_sha256"].tolist() == [before]
+    assert hashlib.sha256(source_path.read_bytes()).hexdigest() == before
+
+
+def test_authoritative_loader_rejects_incomplete_timing_source(tmp_path):
+    from fingering_audit.contracts import TimingSource
+
+    incomplete = TimingSource(
+        cache_dir=tmp_path,
+        repository_id="PianoVAM/PianoVAM_v1",
+        revision="7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8",
+        recording_ids=("trial_a",),
+        provenance=pd.DataFrame(),
+        complete=False,
+    )
+
+    with pytest.raises(ValueError, match="complete"):
+        load_pianovam_notes(
+            FIXTURES / "pianovam", timing_source=incomplete
+        )
 
 
 def test_gt_attachment_and_error_taxonomy():

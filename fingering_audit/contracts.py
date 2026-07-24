@@ -40,7 +40,27 @@ class AuditConfig:
     overwrite_sources: bool
     materialize_missing_detector_outputs: bool
     strict_recommendation_gate: bool
+    timing_repository_id: str = "PianoVAM/PianoVAM_v1"
+    timing_revision: str = "7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8"
+    timing_cache_dir: Path = Path(".cache/fingering_audit/authoritative_timing")
     input_roots: tuple[Path, ...] = ()
+
+
+@dataclass(frozen=True)
+class TimingSource:
+    cache_dir: Path
+    repository_id: str
+    revision: str
+    recording_ids: tuple[str, ...]
+    provenance: Any
+    complete: bool
+
+
+@dataclass(frozen=True)
+class TimingJoin:
+    notes: Any
+    provenance: Any
+    complete: bool
 
 
 @dataclass(frozen=True)

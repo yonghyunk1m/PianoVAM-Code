@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from .contracts import TimingSource
+from .timing import attach_authoritative_offsets
 
 
 def _load_tsv(path: Path) -> pd.DataFrame:
@@ -33,7 +37,10 @@ def _hand(value) -> str | None:
     return hand if hand in {"L", "R"} else None
 
 
-def load_pianovam_notes(path: Path) -> pd.DataFrame:
+def load_pianovam_notes(
+    path: Path,
+    timing_source: TimingSource | None = None,
+) -> pd.DataFrame:
     recordings: list[pd.DataFrame] = []
     for tsv_path in sorted(Path(path).glob("*.tsv")):
         frame = _load_tsv(tsv_path).reset_index(drop=True)
@@ -42,6 +49,7 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
         if missing:
             raise ValueError(f"{tsv_path} missing columns: {sorted(missing)}")
         count = len(frame)
+        source_sha256 = hashlib.sha256(tsv_path.read_bytes()).hexdigest()
         note_idx = np.arange(count, dtype=np.int64)
         hand_source = frame.get("hand", pd.Series(pd.NA, index=frame.index))
         finger_source = frame.get("finger", pd.Series(pd.NA, index=frame.index))
@@ -84,6 +92,7 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
                     "pred_finger": fingers,
                     "pred_finger_id": finger_ids,
                     "source_path": str(tsv_path.resolve()),
+                    "source_sha256": source_sha256,
                 }
             )
         )
@@ -92,6 +101,10 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
         raise ValueError(f"no TSV files found in {path}")
     if result["note_id"].duplicated().any():
         raise ValueError("duplicate canonical note IDs")
+    if timing_source is not None:
+        if not timing_source.complete:
+            raise ValueError("authoritative TimingSource must be complete")
+        return attach_authoritative_offsets(result, timing_source).notes
     return result
 
 

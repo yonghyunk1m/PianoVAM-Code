@@ -16,6 +16,26 @@ def test_default_config_is_noninteractive_and_safe():
     assert cfg.overwrite_sources is False
     assert cfg.random_seed == 20260723
     assert cfg.target_budgets == (10_000, 20_000, 30_000, 50_000)
+    assert cfg.timing_repository_id == "PianoVAM/PianoVAM_v1"
+    assert (
+        cfg.timing_revision
+        == "7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8"
+    )
+    assert cfg.timing_cache_dir.name == "authoritative_timing"
+
+
+def test_config_rejects_moving_or_malformed_timing_revision(tmp_path):
+    original = (FIXTURES / "research-minimal.yaml").read_text(encoding="utf-8")
+    path = tmp_path / "bad.yaml"
+    path.write_text(
+        original.replace(
+            "7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8", "main"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="40-character hexadecimal"):
+        load_config(path)
 
 
 def test_path_discovery_never_selects_output_as_input(tmp_path):

@@ -14,3 +14,6 @@ target_budgets: [10000, 20000, 30000, 50000]
 overwrite_sources: false
 materialize_missing_detector_outputs: true
 strict_recommendation_gate: true
+timing_repository_id: PianoVAM/PianoVAM_v1
+timing_revision: 7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8
+timing_cache_dir: .cache/fingering_audit/authoritative_timing
