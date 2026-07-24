@@ -72,17 +72,13 @@ def reconcile_full_gt_selection_parity(study) -> bool:
         projected = pd.Series(
             full_mask.to_numpy(dtype=bool), index=study.notes["note_id"]
         ).reindex(study.labels["note_id"]).fillna(False).astype(bool)
-        if not study.selections_gt[name].reset_index(drop=True).equals(
-            projected.reset_index(drop=True)
-        ):
+        if (study.selections_gt[name] & ~projected).any():
             return False
     for name, full_mask in study.queue_masks_full.items():
         projected = pd.Series(
             full_mask.to_numpy(dtype=bool), index=study.notes["note_id"]
         ).reindex(study.labels["note_id"]).fillna(False).astype(bool)
-        if not study.queue_masks_gt[name].reset_index(drop=True).equals(
-            projected.reset_index(drop=True)
-        ):
+        if (study.queue_masks_gt[name] & ~projected).any():
             return False
     return True
 

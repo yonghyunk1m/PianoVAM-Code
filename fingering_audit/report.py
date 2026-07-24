@@ -453,10 +453,16 @@ def verify_report(
             timing_ok &= bool(manifest.get("timing_provenance", {}).get("synthetic_offsets", 1) == 0)
             timing_ok &= bool(manifest.get("reconciliations", {}).get("zero_identity_mismatches", False))
             timing_ok &= bool(manifest.get("reconciliations", {}).get("full_gt_selection_parity", False))
+            existing_sources = 0
             for row in timing.itertuples(index=False):
                 source = (config.timing_cache_dir / str(row.revision) / str(row.relative_source_path)).resolve()
-                if source.is_file() and sha256_file(source) != str(row.sha256):
+                if not source.is_file():
                     timing_ok = False
+                    continue
+                existing_sources += 1
+                if source.stat().st_size != int(row.byte_count) or sha256_file(source) != str(row.sha256):
+                    timing_ok = False
+            timing_ok &= existing_sources == len(timing)
         except Exception:
             timing_ok = False
     if not timing_ok:
