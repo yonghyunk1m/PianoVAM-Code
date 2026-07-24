@@ -16,6 +16,11 @@ from fingering_audit.evidence import (
     load_evidence_ledger,
     validate_pig,
 )
+from fingering_audit.physical_policy import (
+    PRACTICAL_ABS,
+    derive_physical_policy,
+    write_physical_policy,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -115,3 +120,113 @@ def test_invalidity_gate_reports_ids_and_blocks_violations():
             {"fixture_same_finger_overlap": result},
             ("fixture_same_finger_overlap",),
         )
+
+
+def test_policy_uses_practical_or_pig_maximum():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[1, ["onset_sec", "offset_sec"]] = [0.25, 0.75]
+
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+
+    assert policy.observation_counts["1-2"] == 1
+    assert policy.observed_maxima["1-2"] == 2
+    assert policy.span_boundaries["1-2"] == PRACTICAL_ABS["1-2"]
+    assert policy.validations["simultaneous_pair_span"].violation_count == 0
+    assert policy.pig_sha256
+
+
+def test_policy_uses_observed_pig_maximum_above_practical_boundary():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[1, ["onset_sec", "offset_sec", "pitch"]] = [0.25, 0.75, 72]
+
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+
+    assert policy.observed_maxima["1-2"] == 12
+    assert policy.span_boundaries["1-2"] == 12
+    assert policy.validations["simultaneous_pair_span"].status == "pass"
+
+
+def test_pair_without_pig_simultaneous_coverage_has_no_boundary():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[1, ["onset_sec", "offset_sec"]] = [0.25, 0.75]
+
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+
+    assert set(policy.span_boundaries) == {"1-2"}
+    assert "1-3" not in policy.observation_counts
+    assert "1-3" not in policy.observed_maxima
+
+
+def test_compound_tokens_are_excluded_from_simple_invalidity():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[0, "finger"] = 4
+    pig.loc[2, ["onset_sec", "offset_sec"]] = [0.1, 0.4]
+
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+
+    assert policy.validations[
+        "simultaneous_same_finger_different_pitch"
+    ].violation_count == 0
+    assert "1-4" not in policy.observation_counts
+
+
+def test_failing_rule_remains_enabled_and_closes_recommendation_gate():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[1, ["onset_sec", "offset_sec", "finger"]] = [0.25, 0.75, 1]
+
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+    validation = policy.validations[
+        "simultaneous_same_finger_different_pitch"
+    ]
+
+    assert validation.status == "fail"
+    assert validation.violation_count > 0
+    assert validation.violating_ids
+    assert validation.rule_id in policy.enabled_rules
+    with pytest.raises(RecommendationGateError, match=validation.rule_id):
+        enforce_recommendation_gate(policy.validations, policy.enabled_rules)
+
+
+def test_physical_policy_serialization_is_complete(tmp_path):
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[1, ["onset_sec", "offset_sec"]] = [0.25, 0.75]
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+
+    path = write_physical_policy(policy, tmp_path / "policy.yaml")
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == 1
+    assert payload["pig_sha256"] == policy.pig_sha256
+    assert payload["timing_epsilon_sec"] == 0.001
+    assert payload["span_boundaries"] == dict(policy.span_boundaries)
+    assert payload["observed_maxima"] == dict(policy.observed_maxima)
+    assert payload["observation_counts"] == dict(policy.observation_counts)
+    assert payload["enabled_rules"] == sorted(policy.enabled_rules)
+    assert set(payload["validations"]) == set(policy.validations)
+    assert payload["validations"]["simultaneous_pair_span"]["violating_ids"] == []
+
+
+def test_physical_policy_mappings_are_immutable():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[1, ["onset_sec", "offset_sec"]] = [0.25, 0.75]
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+
+    with pytest.raises(TypeError):
+        policy.span_boundaries["1-2"] = 99
+    with pytest.raises(TypeError):
+        policy.validations["simultaneous_pair_span"] = None
+
+
+def test_physical_invalidity_rules_are_evidence_governed():
+    ledger = load_evidence_ledger(
+        Path(__file__).parents[2] / "fingering_audit/evidence/thresholds.yaml"
+    )
+
+    same_finger = ledger.rules["simultaneous_same_finger_different_pitch"]
+    span = ledger.rules["simultaneous_pair_span"]
+    assert same_finger.kind is RuleKind.INVALIDITY
+    assert same_finger.evidence_grade is EvidenceGrade.PHYSICAL_INVARIANT
+    assert "compound" in same_finger.rationale.lower()
+    assert span.kind is RuleKind.INVALIDITY
+    assert span.evidence_grade is EvidenceGrade.PHYSICAL_INVARIANT
+    assert "pig" in span.rationale.lower()

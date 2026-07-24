@@ -258,3 +258,41 @@ rules:
       unseen_only: {support_lte: 0}
       singleton: {support_lte: 1}
       rare: {support_lte: 2}
+
+  - rule_id: simultaneous_same_finger_different_pitch
+    kind: invalidity
+    feature: simultaneous_same_finger_different_pitch
+    unit: boolean
+    operator: is_true
+    evidence_grade: physical_invariant
+    source_keys: [pig_dataset_v102]
+    applicability: valid_assigned_same_hand_overlapping_keys
+    may_select_alone: true
+    implementation_version: 1
+    rationale: >-
+      Two separated keys assigned to the same within-hand finger during a
+      strict key-depression overlap are a physical contradiction. PIG is
+      authoritative for validation, and pairs involving a compound fingering
+      token are conservatively excluded so finger-substitution semantics are
+      not flattened to the token's first component.
+    sensitivity_variants:
+      strict_overlap_1ms: {timing_epsilon_sec: 0.001}
+
+  - rule_id: simultaneous_pair_span
+    kind: invalidity
+    feature: simultaneous_pair_span_beyond_policy
+    unit: semitones
+    operator: strictly_greater_than_pair_boundary
+    evidence_grade: physical_invariant
+    source_keys: [parncutt1997ergonomic, pig_dataset_v102]
+    applicability: valid_assigned_same_hand_overlapping_keys
+    may_select_alone: true
+    implementation_version: 1
+    rationale: >-
+      The PIG-authorized boundary is the maximum of the absolute published
+      MinPrac and MaxPrac limits and the largest valid simultaneous span
+      observed in PIG. Equality is accepted, and no boundary is asserted for
+      a pair without PIG simultaneous coverage. This conservative policy is
+      an audit contradiction, not a universal anatomical limit.
+    sensitivity_variants:
+      pig_authorized_max: {timing_epsilon_sec: 0.001}

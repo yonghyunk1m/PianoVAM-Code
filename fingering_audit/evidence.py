@@ -14,6 +14,7 @@ from .contracts import (
     RuleDefinition,
     RuleKind,
 )
+from .features.audit_flags import AuditFlags
 
 
 class RecommendationGateError(RuntimeError):
@@ -150,6 +151,27 @@ def validate_pig(rule: RuleDefinition, pig_notes: pd.DataFrame) -> PigValidation
         violation_count=len(violating_ids),
         violating_ids=violating_ids,
     )
+
+
+def physical_validations_from_flags(
+    canonical: pd.DataFrame, flags: AuditFlags
+) -> dict[str, PigValidation]:
+    rule_masks = {
+        "simultaneous_same_finger_different_pitch": flags.same_finger_candidate,
+        "simultaneous_pair_span": flags.span_candidate,
+    }
+    validations = {}
+    for rule_id, mask in rule_masks.items():
+        violating_ids = tuple(
+            canonical.loc[mask.to_numpy(), "note_id"].astype(str)
+        )
+        validations[rule_id] = PigValidation(
+            rule_id=rule_id,
+            status="pass" if not violating_ids else "fail",
+            violation_count=len(violating_ids),
+            violating_ids=violating_ids,
+        )
+    return validations
 
 
 def enforce_recommendation_gate(
