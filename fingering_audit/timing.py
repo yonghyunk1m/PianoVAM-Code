@@ -225,6 +225,10 @@ def attach_authoritative_offsets(
                 **source_row.to_dict(),
                 "fingering_row_count": len(fingering),
                 "joined_row_count": len(matched),
+                "identity_count_check": True,
+                "onset_check": True,
+                "pitch_check": True,
+                "velocity_check": True,
                 "validation_status": "exact_join_valid",
             }
         )

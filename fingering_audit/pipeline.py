@@ -10,6 +10,7 @@ import pandas as pd
 
 from .acquire import PigUnavailableError, ensure_pig
 from .canonical import load_pig_canonical, load_pianovam_notes
+from .timing import attach_authoritative_offsets
 from .acquire import ensure_authoritative_timing
 from .contracts import AuditConfig
 from .evidence import (
@@ -59,6 +60,31 @@ def reconcile_exact_queue_selection_universes(
         ),
         "exact_queue_selection_key_parity": full_ids == gt_ids,
     }
+
+
+def reconcile_full_gt_selection_parity(study) -> bool:
+    """Every GT mask must equal the exact note-id projection of its full mask."""
+    lookup = pd.Series(
+        study.notes["note_id"].to_numpy(), index=study.notes["note_id"]
+    )
+    del lookup
+    for name, full_mask in study.selections_full.items():
+        projected = pd.Series(
+            full_mask.to_numpy(dtype=bool), index=study.notes["note_id"]
+        ).reindex(study.labels["note_id"]).fillna(False).astype(bool)
+        if not study.selections_gt[name].reset_index(drop=True).equals(
+            projected.reset_index(drop=True)
+        ):
+            return False
+    for name, full_mask in study.queue_masks_full.items():
+        projected = pd.Series(
+            full_mask.to_numpy(dtype=bool), index=study.notes["note_id"]
+        ).reindex(study.labels["note_id"]).fillna(False).astype(bool)
+        if not study.queue_masks_gt[name].reset_index(drop=True).equals(
+            projected.reset_index(drop=True)
+        ):
+            return False
+    return True
 
 
 def run_research(
@@ -127,11 +153,10 @@ def run_research(
         timing_source = ensure_authoritative_timing(
             config, tuple(sorted(raw_notes["recording_id"].unique()))
         )
-        enriched_notes = load_pianovam_notes(
-            config.pianovam_fingering_dir, timing_source=timing_source
-        )
+        timing_join = attach_authoritative_offsets(raw_notes, timing_source)
+        enriched_notes = timing_join.notes
         (manifest.run_dir / "data").mkdir(parents=True, exist_ok=True)
-        timing_provenance = timing_source.provenance.copy()
+        timing_provenance = timing_join.provenance.copy()
         timing_provenance.to_csv(
             manifest.run_dir / "data/timing_provenance.csv", index=False
         )
@@ -334,6 +359,7 @@ def run_research(
             "zero_missing_offsets": int(enriched_notes["offset_sec"].isna().sum()) == 0,
             "zero_identity_mismatches": bool(timing_source.complete),
             "zero_synthetic_offsets": True,
+            "full_gt_selection_parity": reconcile_full_gt_selection_parity(study),
             "full_gt_eligibility_parity": (
                 study.labels["note_id"].isin(study.notes["note_id"]).all()
                 and study.queue_masks_gt["data_integrity_must_resolve"].equals(

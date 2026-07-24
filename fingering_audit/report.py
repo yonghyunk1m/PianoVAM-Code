@@ -431,6 +431,36 @@ def verify_report(
         name for name in REQUIRED_RESULTS if not (run_dir / "results" / name).is_file()
     ]
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    timing_path = run_dir / "data" / "timing_provenance.csv"
+    timing_ok = False
+    if timing_path.is_file():
+        try:
+            timing = pd.read_csv(timing_path)
+            required = {"recording_id", "repository_id", "revision", "relative_source_path",
+                        "sha256", "byte_count", "row_count", "fingering_row_count",
+                        "joined_row_count", "validation_status"}
+            timing_ok = required <= set(timing.columns)
+            timing_ok &= len(timing) == 105 and timing["recording_id"].nunique() == 105
+            timing_ok &= timing["repository_id"].eq("PianoVAM/PianoVAM_v1").all()
+            timing_ok &= timing["revision"].eq("7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8").all()
+            timing_ok &= timing["relative_source_path"].eq(
+                "TSV/" + timing["recording_id"].astype(str) + ".tsv"
+            ).all()
+            timing_ok &= timing["validation_status"].eq("exact_join_valid").all()
+            timing_ok &= timing["joined_row_count"].sum() == 508621
+            timing_ok &= timing["fingering_row_count"].sum() == 508621
+            timing_ok &= bool(manifest.get("timing_provenance", {}).get("missing_offsets", 1) == 0)
+            timing_ok &= bool(manifest.get("timing_provenance", {}).get("synthetic_offsets", 1) == 0)
+            timing_ok &= bool(manifest.get("reconciliations", {}).get("zero_identity_mismatches", False))
+            timing_ok &= bool(manifest.get("reconciliations", {}).get("full_gt_selection_parity", False))
+            for row in timing.itertuples(index=False):
+                source = (config.timing_cache_dir / str(row.revision) / str(row.relative_source_path)).resolve()
+                if source.is_file() and sha256_file(source) != str(row.sha256):
+                    timing_ok = False
+        except Exception:
+            timing_ok = False
+    if not timing_ok:
+        missing.append("timing_provenance.csv")
     return {
         "verification_status": "PASS" if not missing else "FAIL",
         "run_dir": str(run_dir.resolve()),
