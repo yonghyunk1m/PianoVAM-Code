@@ -12,6 +12,12 @@ from fingering_audit.study import (
     summarize_study,
 )
 
+CALIBRATED_VARIANTS = {
+    f"ni_w{window}_q{quantile}"
+    for window in (5, 9, 17)
+    for quantile in (995, 990, 975)
+}
+
 
 @pytest.fixture
 def study():
@@ -41,6 +47,10 @@ def study():
         mask = pd.Series(False, index=notes.index)
         mask.loc[1 + index % 4] = True
         queue_full[variant] = mask
+    for index, variant in enumerate(sorted(CALIBRATED_VARIANTS)):
+        mask = pd.Series(False, index=notes.index)
+        mask.loc[1 + index % 4] = True
+        queue_full[variant] = mask
     queue_gt = {name: mask.copy() for name, mask in queue_full.items()}
     base_full = {"base": pd.Series([False, False, True, False, False, False])}
     base_gt = {name: mask.copy() for name, mask in base_full.items()}
@@ -66,6 +76,15 @@ def study():
                 "radius": radius,
             }
             for variant, (min_run, radius) in NOINFO_VARIANTS.items()
+        ]
+        + [
+            {
+                "calibration": "training_fold",
+                "variant": variant,
+                "min_run": pd.NA,
+                "radius": pd.NA,
+            }
+            for variant in sorted(CALIBRATED_VARIANTS)
         ]
     )
     return StudyData(
@@ -122,6 +141,14 @@ def test_noinfo_table_has_nine_fixed_rows_and_finger_outputs(study):
     assert combined <= set(tables["per_finger"]["set_id"])
 
 
+def test_all_standalone_noinfo_variants_have_finger_outputs(study):
+    tables = summarize_study(study, "fixture", seed=7)
+    expected = set(NOINFO_VARIANTS) | CALIBRATED_VARIANTS
+
+    assert expected <= set(tables["per_finger"]["set_id"])
+    assert expected <= set(tables["workload_per_finger"]["set_id"])
+
+
 def test_oof_noinfo_tail_uses_other_recordings_and_nonzero_scores_only():
     notes = pd.DataFrame(
         {
@@ -162,3 +189,64 @@ def test_oof_noinfo_tail_fails_closed_without_nonzero_training_scores():
     assert not full.any()
     assert not gt.any()
     assert np.isinf(thresholds["threshold"]).all()
+
+
+def test_assigned_metrics_and_workload_exclude_integrity_rows():
+    notes = pd.DataFrame(
+        {
+            "note_id": ["bad", "valid"],
+            "recording_id": ["r", "r"],
+            "pred_hand": ["R", "R"],
+            "pred_finger": pd.array([1, 1], dtype="Int64"),
+            "pred_finger_id": ["R1", "R1"],
+        }
+    )
+    labels = notes.assign(
+        gt_finger_id=["R1", "R1"],
+        exact_error=[True, True],
+        hand_error=[False, False],
+        within_hand_finger_error=[True, True],
+    )
+    selected = pd.Series([False, True])
+    integrity = pd.Series([True, False])
+    queues = {
+        "physical_candidate_diagnostic": pd.Series([False, False]),
+        "physical_must_alert": pd.Series([False, False]),
+        "data_integrity_must_resolve": integrity,
+    }
+    integrity_study = StudyData(
+        notes=notes,
+        labels=labels,
+        features=pd.DataFrame(index=notes.index),
+        selections_full={"base": selected},
+        selections_gt={"base": selected.copy()},
+        set_metadata=pd.DataFrame(
+            [
+                {
+                    "set_id": "base",
+                    "strategy": "fixture",
+                    "evidence_grade": "fixture",
+                    "threshold_summary": "fixture",
+                }
+            ]
+        ),
+        fold_thresholds=pd.DataFrame(),
+        queue_masks_full=queues,
+        queue_masks_gt={name: mask.copy() for name, mask in queues.items()},
+        noinfo_sensitivity=pd.DataFrame(),
+    )
+
+    tables = summarize_study(integrity_study, "fixture", seed=7)
+
+    row = tables["filter_sets"].iloc[0]
+    assert row["assigned_gt_error_recall"] == 1.0
+    assert row["hard_percentage_assigned_notes"] == 1.0
+    finger = tables["per_finger"].query(
+        "set_id == 'base' and finger_id == 'R1'"
+    )
+    assert set(finger["error_recall"]) == {1.0}
+    workload = tables["workload_per_finger"].query(
+        "set_id == 'base' and predicted_finger_id == 'R1'"
+    ).iloc[0]
+    assert workload["eligible_notes"] == 1
+    assert workload["hard_percentage"] == 1.0

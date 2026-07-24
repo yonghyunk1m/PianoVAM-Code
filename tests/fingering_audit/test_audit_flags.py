@@ -59,6 +59,52 @@ def test_noinfo_context_uses_recording_order_and_only_selects_assigned():
     ]
 
 
+def test_noinfo_context_radius_skips_assigned_integrity_rows():
+    frame = fixture_notes(
+        [
+            {
+                "onset_sec": 0.0,
+                "offset_sec": 0.4,
+                "pitch": 60,
+                "pred_hand": "R",
+                "pred_finger": 1,
+            },
+            {
+                "onset_sec": 0.1,
+                "offset_sec": float("inf"),
+                "pitch": 62,
+                "pred_hand": "R",
+                "pred_finger": 2,
+            },
+            {
+                "onset_sec": 0.2,
+                "offset_sec": 0.3,
+                "pitch": 64,
+                "pred_hand": None,
+                "pred_finger": None,
+            },
+            {
+                "onset_sec": 0.3,
+                "offset_sec": 0.4,
+                "pitch": 65,
+                "pred_hand": None,
+                "pred_finger": None,
+            },
+            {
+                "onset_sec": 0.4,
+                "offset_sec": 0.8,
+                "pitch": 67,
+                "pred_hand": "R",
+                "pred_finger": 3,
+            },
+        ]
+    )
+
+    selected = noinfo_context_mask(frame, min_run=2, radius=1)
+
+    assert selected.tolist() == [True, False, False, False, True]
+
+
 def test_noinfo_grid_is_monotone():
     frame = noinfo_fixture(run_length=5)
     broad = noinfo_context_mask(frame, min_run=2, radius=4)

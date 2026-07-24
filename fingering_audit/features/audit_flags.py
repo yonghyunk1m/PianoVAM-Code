@@ -39,6 +39,7 @@ def noinfo_context_mask(
     min_run: int,
     radius: int,
     sequence: str = "recording",
+    integrity_mask: pd.Series | None = None,
 ) -> pd.Series:
     if min_run not in NOINFO_RUN_LENGTHS:
         raise ValueError(f"unsupported min_run: {min_run}")
@@ -49,6 +50,24 @@ def noinfo_context_mask(
 
     work = notes.reset_index(drop=True)
     assigned = _assigned_fingering(work).to_numpy(dtype=bool)
+    if integrity_mask is None:
+        audit_work = work.copy()
+        if "compound_fingering" not in audit_work:
+            audit_work["compound_fingering"] = False
+        integrity = compute_audit_flags(audit_work).integrity.to_numpy(
+            dtype=bool
+        )
+    else:
+        if len(integrity_mask) != len(work):
+            raise ValueError("integrity mask length does not match notes")
+        integrity = (
+            pd.Series(integrity_mask)
+            .fillna(True)
+            .astype(bool)
+            .reset_index(drop=True)
+            .to_numpy()
+        )
+    context_eligible = assigned & ~integrity
     selected = np.zeros(len(work), dtype=bool)
     if sequence == "available_hand":
         valid_hand = work["pred_hand"].astype("string").isin(["L", "R"])
@@ -72,13 +91,14 @@ def noinfo_context_mask(
         for start, end in zip(starts, ends):
             if end - start < min_run:
                 continue
+            before = positions[:start][::-1]
+            before = before[context_eligible[before]][:radius]
+            after = positions[end:]
+            after = after[context_eligible[after]][:radius]
             context = np.concatenate(
-                (
-                    positions[max(0, start - radius) : start],
-                    positions[end : min(len(positions), end + radius)],
-                )
+                (before, after)
             )
-            selected[context] = assigned[context]
+            selected[context] = True
 
     return pd.Series(selected, index=notes.index)
 

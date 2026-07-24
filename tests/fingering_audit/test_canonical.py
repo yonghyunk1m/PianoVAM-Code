@@ -7,7 +7,9 @@ from fingering_audit.canonical import (
     load_ground_truth,
     load_pianovam_notes,
 )
+from fingering_audit.contracts import AuditConfig
 from fingering_audit.evaluation.labels import label_errors
+from fingering_audit.study import build_study
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -55,3 +57,54 @@ def test_gt_attachment_and_error_taxonomy():
     assert bool(labeled.loc[3, "hand_error"])
     assert not bool(labeled.loc[3, "within_hand_finger_error"])
     assert labeled.loc[3, "gt_finger_id"] == "R2"
+
+
+def test_loader_and_study_preserve_malformed_rows_as_integrity(tmp_path):
+    source = tmp_path / "pianovam"
+    source.mkdir()
+    (source / "malformed.tsv").write_text(
+        "onset\tkey_offset\tnote\thand\tfinger\tvelocity\n"
+        "0.0\t0.4\t60\tR\t1\t80\n"
+        "bad\t0.8\t61\tR\t2\t80\n"
+        "0.2\tinf\t200\tR\t3\t80\n"
+        "0.3\t0.7\t64\tNoinfo\tNoinfo\t80\n",
+        encoding="utf-8",
+    )
+    ground_truth = tmp_path / "gt.py"
+    ground_truth.write_text(
+        "GT_MAP = {'malformed': ["
+        "('R', 1), ('R', 2), ('R', 3), ('R', 4)]}\n",
+        encoding="utf-8",
+    )
+
+    notes = load_pianovam_notes(source)
+
+    assert len(notes) == 4
+    assert pd.isna(notes.loc[1, "onset_sec"])
+    assert notes.loc[2, "pitch"] == 200
+    config = AuditConfig(
+        schema_version=1,
+        noninteractive=True,
+        random_seed=7,
+        repository_root=Path.cwd(),
+        pianovam_fingering_dir=source,
+        ground_truth_module=ground_truth,
+        pig_search_roots=(),
+        detector_search_roots=(),
+        artifact_root=tmp_path / "artifacts",
+        target_budgets=(),
+        overwrite_sources=False,
+        materialize_missing_detector_outputs=False,
+        strict_recommendation_gate=True,
+    )
+
+    study = build_study(config)
+
+    integrity = study.queue_masks_full["data_integrity_must_resolve"]
+    assert integrity.tolist() == [False, True, True, True]
+    assert study.features["hmm_feature_available"].tolist() == [
+        True,
+        False,
+        False,
+        False,
+    ]

@@ -24,7 +24,7 @@ def _load_tsv(path: Path) -> pd.DataFrame:
 def _finger(value) -> int | None:
     try:
         finger = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return finger if 1 <= finger <= 5 else None
 
@@ -48,11 +48,7 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
         finger_source = frame.get("finger", pd.Series(pd.NA, index=frame.index))
         hands = hand_source.map(_hand)
         fingers = finger_source.map(_finger).where(hands.notna())
-        pitches = pd.to_numeric(frame["note"], errors="raise").astype(np.int16)
-        invalid_pitch = (pitches < 0) | (pitches > 127)
-        if invalid_pitch.any():
-            pitch = int(pitches.loc[invalid_pitch].iloc[0])
-            raise ValueError(f"invalid MIDI pitch {pitch} in {tsv_path}")
+        pitches = pd.to_numeric(frame["note"], errors="coerce").astype(float)
         offsets = (
             pd.to_numeric(frame["key_offset"], errors="coerce")
             if "key_offset" in frame
@@ -71,7 +67,7 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
                     "recording_id": tsv_path.stem,
                     "note_idx": note_idx,
                     "note_id": [f"{tsv_path.stem}#{idx}" for idx in note_idx],
-                    "onset_sec": pd.to_numeric(frame["onset"], errors="raise"),
+                    "onset_sec": pd.to_numeric(frame["onset"], errors="coerce"),
                     "offset_sec": offsets,
                     "pitch": pitches,
                     "velocity": velocities,

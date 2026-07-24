@@ -97,3 +97,13 @@ def test_mandatory_union_rejects_overlap_with_integrity():
             noinfo=pd.Series([False]),
             integrity=pd.Series([True]),
         )
+
+
+def test_mandatory_union_rejects_unequal_mask_lengths():
+    with pytest.raises(ValueError, match="length"):
+        combine_mandatory(
+            risk=pd.Series([False, True]),
+            physical=pd.Series([False]),
+            noinfo=pd.Series([False, False]),
+            integrity=pd.Series([False, False]),
+        )

@@ -19,9 +19,13 @@ def combine_mandatory(
     noinfo: pd.Series,
     integrity: pd.Series,
 ) -> pd.Series:
+    values = tuple(pd.Series(value) for value in (risk, physical, noinfo, integrity))
+    lengths = {len(value) for value in values}
+    if len(lengths) != 1:
+        raise ValueError(f"mandatory mask length mismatch: {sorted(lengths)}")
     masks = [
         pd.Series(value).fillna(False).astype(bool).reset_index(drop=True)
-        for value in (risk, physical, noinfo, integrity)
+        for value in values
     ]
     risk_mask, physical_mask, noinfo_mask, integrity_mask = masks
     if (physical_mask & integrity_mask).any():
