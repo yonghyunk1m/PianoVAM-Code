@@ -936,3 +936,1223 @@ Completion requires a fresh full Python test run, a fresh Vite production
 build, successful artifact reconciliation, and a consolidated-document update
 with the resulting physical-rule and `Noinfo` sensitivity tables. No result
 may be described as recommendable while the authoritative PIG gate is closed.
+
+# Physical Must-Alert and Noinfo Context Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> `superpowers:subagent-driven-development` (recommended) or
+> `superpowers:executing-plans` to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Replace the conflated legacy “impossible fingering” rule with shared,
+PIG-gated physical and integrity layers, add configurable `Noinfo`-context
+alerts, and report each strategy/threshold combination overall and by finger.
+
+**Architecture:** `fingering_audit/features/audit_flags.py` will compute
+integrity, simultaneous physical-candidate, and missing-context masks for both
+the research pipeline and Vite preprocessing.
+`fingering_audit/physical_policy.py` will derive and validate PIG-authorized
+simultaneous-span boundaries. The study will preserve marginal risk masks,
+then union every strategy with the enabled physical layer and each `Noinfo`
+variant.
+
+**Tech Stack:** Python 3.10, pandas, NumPy, PyYAML, pytest, React 18, Vite 5.
+
+## Global Constraints
+
+- PIG v1.02 annotations are authoritative valid fingerings.
+- Invalidity rules require zero complete-PIG violations before setting
+  `physical_must_alert`.
+- Strict overlap is `later_onset < earlier_offset - 0.001 seconds`.
+- Invalid offsets create integrity flags; rule evaluation never invents a
+  0.5-second offset.
+- Crossings, leaps, sequential spans, and order changes remain risk signals.
+- Integrity records are excluded from assigned-finger workload and recall.
+- Fixed `Noinfo` runs are 2, 3, and 5; radii are 1, 2, and 4.
+- Missingness windows are 5, 9, and 17 notes; fold tails are 99.5%, 99%, and
+  97.5%.
+- Thresholds are never selected to approach 30,000 notes.
+- Source TSVs and existing human verdicts remain immutable.
+- This file remains the single user-facing design, plan, and results document.
+
+## File map
+
+| File | Responsibility |
+|---|---|
+| `fingering_audit/features/audit_flags.py` | validation, overlap sweep, physical candidates, `Noinfo` contexts |
+| `fingering_audit/physical_policy.py` | practical/PIG boundaries, PIG checks, policy serialization |
+| `fingering_audit/evidence/thresholds.yaml` | rule evidence and variants |
+| `fingering_audit/study.py` | queue masks, filter cross-products, sensitivity rows |
+| `fingering_audit/report.py` | queue tables and report rendering |
+| `fingering_audit/pipeline.py` | policy lifecycle, artifacts, gates |
+| `ManualCheck/hard_part_selector.py` | shared-engine compatibility adapter |
+| `annotate/prepare_review_data.py` | JSON category serialization |
+| `annotate/src/App.jsx` | category priority and reason display |
+| `tests/fingering_audit/test_audit_flags.py` | physical, integrity, and `Noinfo` tests |
+| `tests/fingering_audit/test_evidence.py` | PIG policy and gate tests |
+| `tests/fingering_audit/test_filters.py` | mandatory-union invariants |
+| `tests/fingering_audit/test_report.py` | sensitivity and per-finger artifacts |
+| `tests/test_prepare_review_data.py` | Vite JSON compatibility |
+
+---
+
+### Task 1: Canonical integrity and simultaneous-note engine
+
+**Files:**
+
+- Create: `fingering_audit/features/audit_flags.py`
+- Create: `tests/fingering_audit/test_audit_flags.py`
+
+**Interfaces:**
+
+- Produces `compute_audit_flags(notes, span_boundaries=None,
+  timing_epsilon_sec=0.001) -> AuditFlags`.
+- `AuditFlags` contains `integrity`, `integrity_reasons`,
+  `same_finger_candidate`, `span_candidate`, `physical_candidate`, and
+  `physical_reasons`.
+- Finger-pair keys are ascending strings such as `"1-5"`.
+
+- [ ] **Step 1: Write failing integrity and overlap tests**
+
+```python
+import pandas as pd
+
+from fingering_audit.features.audit_flags import compute_audit_flags
+
+
+def fixture_notes(rows):
+    records = []
+    for index, values in enumerate(rows):
+        records.append({
+            "recording_id": "r",
+            "note_id": f"r#{index}",
+            "note_idx": index,
+            "compound_fingering": False,
+            **values,
+        })
+    return pd.DataFrame.from_records(records)
+
+
+def test_invalid_offset_is_integrity_not_physical():
+    frame = fixture_notes([{
+        "onset_sec": 0.0, "offset_sec": None, "pitch": 60,
+        "pred_hand": "R", "pred_finger": 1,
+    }])
+    flags = compute_audit_flags(frame, {"1-5": 16})
+    assert flags.integrity.tolist() == [True]
+    assert "missing_offset" in flags.integrity_reasons.iloc[0]
+    assert flags.physical_candidate.tolist() == [False]
+
+
+def test_same_finger_overlap_flags_both_notes():
+    frame = fixture_notes([
+        {"onset_sec": 0.0, "offset_sec": 1.0, "pitch": 60,
+         "pred_hand": "R", "pred_finger": 2},
+        {"onset_sec": 0.2, "offset_sec": 0.8, "pitch": 64,
+         "pred_hand": "R", "pred_finger": 2},
+    ])
+    flags = compute_audit_flags(frame)
+    assert flags.same_finger_candidate.tolist() == [True, True]
+```
+
+- [ ] **Step 2: Verify RED**
+
+Run:
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_audit_flags.py -v
+```
+
+Expected: `ModuleNotFoundError` for `audit_flags`.
+
+- [ ] **Step 3: Implement the immutable result and active-note sweep**
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Mapping
+
+import pandas as pd
+
+
+@dataclass(frozen=True)
+class AuditFlags:
+    integrity: pd.Series
+    integrity_reasons: pd.Series
+    same_finger_candidate: pd.Series
+    span_candidate: pd.Series
+    physical_candidate: pd.Series
+    physical_reasons: pd.Series
+
+
+def _pair_key(first, second):
+    return f"{min(first, second)}-{max(first, second)}"
+
+
+def compute_audit_flags(
+    notes: pd.DataFrame,
+    span_boundaries: Mapping[str, int] | None = None,
+    *,
+    timing_epsilon_sec: float = 0.001,
+) -> AuditFlags:
+    work = notes.reset_index(drop=True)
+    hand = work["pred_hand"].astype("string")
+    finger = pd.to_numeric(work["pred_finger"], errors="coerce")
+    pitch = pd.to_numeric(work["pitch"], errors="coerce")
+    onset = pd.to_numeric(work["onset_sec"], errors="coerce")
+    offset = pd.to_numeric(work["offset_sec"], errors="coerce")
+    reason_sets = [set() for _ in range(len(work))]
+    for index in work.index:
+        if hand.loc[index] not in {"L", "R"}:
+            reason_sets[index].add("missing_or_invalid_hand")
+        if pd.isna(finger.loc[index]) or not 1 <= finger.loc[index] <= 5:
+            reason_sets[index].add("missing_or_invalid_finger")
+        if pd.isna(pitch.loc[index]) or not 0 <= pitch.loc[index] <= 127:
+            reason_sets[index].add("missing_or_invalid_pitch")
+        if pd.isna(onset.loc[index]):
+            reason_sets[index].add("missing_onset")
+        if pd.isna(offset.loc[index]):
+            reason_sets[index].add("missing_offset")
+        elif not pd.isna(onset.loc[index]) and offset.loc[index] < onset.loc[index]:
+            reason_sets[index].add("offset_before_onset")
+    integrity = pd.Series(
+        [bool(value) for value in reason_sets], index=work.index
+    )
+    same_finger = pd.Series(False, index=work.index)
+    span = pd.Series(False, index=work.index)
+    physical_reason_sets = [set() for _ in range(len(work))]
+    valid = work.loc[~integrity].copy()
+    valid["_hand"] = hand.loc[valid.index]
+    valid["_finger"] = finger.loc[valid.index].astype(int)
+    valid["_pitch"] = pitch.loc[valid.index].astype(int)
+    valid["_onset"] = onset.loc[valid.index]
+    valid["_offset"] = offset.loc[valid.index]
+    for _, group in valid.groupby(["recording_id", "_hand"], sort=False):
+        active = []
+        ordered = group.sort_values(["_onset", "note_idx"], kind="stable")
+        for current in ordered.index:
+            current_onset = float(valid.at[current, "_onset"])
+            active = [
+                earlier for earlier in active
+                if float(valid.at[earlier, "_offset"])
+                > current_onset + timing_epsilon_sec
+            ]
+            for earlier in active:
+                if valid.at[earlier, "_pitch"] == valid.at[current, "_pitch"]:
+                    continue
+                first = int(valid.at[earlier, "_finger"])
+                second = int(valid.at[current, "_finger"])
+                simple = not bool(work.at[earlier, "compound_fingering"])
+                simple = simple and not bool(
+                    work.at[current, "compound_fingering"]
+                )
+                if simple and first == second:
+                    same_finger.loc[[earlier, current]] = True
+                    physical_reason_sets[earlier].add(
+                        "same_finger_simultaneous_keys"
+                    )
+                    physical_reason_sets[current].add(
+                        "same_finger_simultaneous_keys"
+                    )
+                boundary = (span_boundaries or {}).get(
+                    _pair_key(first, second)
+                )
+                distance = abs(
+                    int(valid.at[earlier, "_pitch"])
+                    - int(valid.at[current, "_pitch"])
+                )
+                if simple and boundary is not None and distance > boundary:
+                    span.loc[[earlier, current]] = True
+                    physical_reason_sets[earlier].add(
+                        "simultaneous_span_beyond_policy"
+                    )
+                    physical_reason_sets[current].add(
+                        "simultaneous_span_beyond_policy"
+                    )
+            active.append(current)
+    integrity_reasons = pd.Series(
+        [tuple(sorted(value)) for value in reason_sets], index=work.index
+    )
+    physical_reasons = pd.Series(
+        [tuple(sorted(value)) for value in physical_reason_sets],
+        index=work.index,
+    )
+    return AuditFlags(
+        integrity=integrity,
+        integrity_reasons=integrity_reasons,
+        same_finger_candidate=same_finger,
+        span_candidate=span,
+        physical_candidate=same_finger | span,
+        physical_reasons=physical_reasons,
+    )
+```
+
+The implementation must be linear in notes plus active chord pairs and must
+not compare every pair in an entire recording.
+
+- [ ] **Step 4: Add strict-boundary and non-adjacent chord tests**
+
+```python
+def test_touching_intervals_and_repeated_pitch_do_not_flag():
+    frame = fixture_notes([
+        {"onset_sec": 0.0, "offset_sec": 0.5, "pitch": 60,
+         "pred_hand": "R", "pred_finger": 2},
+        {"onset_sec": 0.5, "offset_sec": 1.0, "pitch": 64,
+         "pred_hand": "R", "pred_finger": 2},
+        {"onset_sec": 0.1, "offset_sec": 0.4, "pitch": 60,
+         "pred_hand": "R", "pred_finger": 2},
+    ])
+    assert not compute_audit_flags(frame).physical_candidate.any()
+
+
+def test_span_is_strict_and_checks_non_adjacent_active_notes():
+    frame = fixture_notes([
+        {"onset_sec": 0.0, "offset_sec": 1.0, "pitch": 48,
+         "pred_hand": "R", "pred_finger": 1},
+        {"onset_sec": 0.1, "offset_sec": 0.9, "pitch": 60,
+         "pred_hand": "R", "pred_finger": 3},
+        {"onset_sec": 0.2, "offset_sec": 0.8, "pitch": 65,
+         "pred_hand": "R", "pred_finger": 5},
+    ])
+    flags = compute_audit_flags(
+        frame,
+        {"1-5": 16, "1-3": 12, "3-5": 7},
+    )
+    assert flags.span_candidate.tolist() == [True, False, True]
+```
+
+- [ ] **Step 5: Verify GREEN and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_audit_flags.py -v
+git add fingering_audit/features/audit_flags.py \
+  tests/fingering_audit/test_audit_flags.py
+git commit -m "feat: add canonical physical audit flags"
+```
+
+Expected: all Task 1 tests pass before the commit.
+
+### Task 2: PIG-authorized physical policy
+
+**Files:**
+
+- Create: `fingering_audit/physical_policy.py`
+- Modify: `fingering_audit/evidence.py`
+- Modify: `fingering_audit/evidence/thresholds.yaml`
+- Modify: `tests/fingering_audit/test_evidence.py`
+
+**Interfaces:**
+
+- Produces immutable `PhysicalPolicy(span_boundaries, observed_maxima,
+  observation_counts, enabled_rules, validations, pig_sha256)`.
+- Produces `derive_physical_policy(pig_notes, pig_root) -> PhysicalPolicy`.
+- Produces `write_physical_policy(policy, path) -> Path`.
+
+- [ ] **Step 1: Write failing policy and compound-token tests**
+
+```python
+from fingering_audit.physical_policy import (
+    PRACTICAL_ABS,
+    derive_physical_policy,
+)
+
+
+def test_policy_uses_practical_or_pig_maximum():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[1, ["onset_sec", "offset_sec"]] = [0.25, 0.75]
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+    assert policy.observation_counts["1-2"] == 1
+    assert policy.span_boundaries["1-2"] >= PRACTICAL_ABS["1-2"]
+    assert policy.validations["simultaneous_pair_span"].violation_count == 0
+    assert policy.pig_sha256
+
+
+def test_compound_tokens_are_excluded_from_simple_invalidity():
+    pig = load_pig_canonical(FIXTURES / "PIG")
+    pig.loc[0, "finger"] = 4
+    pig.loc[2, ["onset_sec", "offset_sec"]] = [0.1, 0.4]
+    policy = derive_physical_policy(pig, FIXTURES / "PIG")
+    assert policy.validations[
+        "simultaneous_same_finger_different_pitch"
+    ].violation_count == 0
+```
+
+- [ ] **Step 2: Verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_evidence.py -v
+```
+
+Expected: import fails because `physical_policy` is absent.
+
+- [ ] **Step 3: Implement direct PIG active-pair maxima and validations**
+
+```python
+import hashlib
+from dataclasses import asdict, dataclass
+
+import pandas as pd
+import yaml
+
+from fingering_audit.contracts import PigValidation
+from fingering_audit.features.audit_flags import compute_audit_flags
+
+
+PRACTICAL_ABS = {
+    "1-2": 10, "1-3": 12, "1-4": 14, "1-5": 15,
+    "2-3": 5, "2-4": 7, "2-5": 10,
+    "3-4": 4, "3-5": 7, "4-5": 5,
+}
+
+
+@dataclass(frozen=True)
+class PhysicalPolicy:
+    span_boundaries: dict[str, int]
+    observed_maxima: dict[str, int]
+    observation_counts: dict[str, int]
+    enabled_rules: frozenset[str]
+    validations: dict[str, PigValidation]
+    pig_sha256: str
+
+
+def sha256_dataset_tree(root):
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def pig_to_canonical(pig):
+    result = pig.rename(columns={
+        "pig_note_id": "note_id",
+        "hand": "pred_hand",
+        "finger": "pred_finger",
+    }).copy()
+    result["recording_id"] = (
+        result["piece_id"].astype(str)
+        + "-"
+        + result["performer_id"].astype(str)
+    )
+    result["note_idx"] = result["note_index"]
+    return result.reset_index(drop=True)
+
+
+def simultaneous_pair_maxima(simple):
+    canonical = pig_to_canonical(simple)
+    maxima = {}
+    counts = {}
+    for _, group in canonical.groupby(
+        ["recording_id", "pred_hand"], sort=False
+    ):
+        active = []
+        ordered = group.sort_values(
+            ["onset_sec", "note_idx"], kind="stable"
+        )
+        for row in ordered.itertuples():
+            active = [
+                earlier for earlier in active
+                if float(earlier.offset_sec) > float(row.onset_sec) + 0.001
+            ]
+            for earlier in active:
+                if int(earlier.pred_finger) == int(row.pred_finger):
+                    continue
+                pair = "-".join(map(str, sorted([
+                    int(earlier.pred_finger), int(row.pred_finger)
+                ])))
+                distance = abs(int(earlier.pitch) - int(row.pitch))
+                maxima[pair] = max(maxima.get(pair, 0), distance)
+                counts[pair] = counts.get(pair, 0) + 1
+            active.append(row)
+    return maxima, counts
+
+
+def validations_from_flags(canonical, flags):
+    same_ids = tuple(
+        canonical.loc[
+            flags.same_finger_candidate.to_numpy(), "note_id"
+        ].astype(str)
+    )
+    span_ids = tuple(
+        canonical.loc[
+            flags.span_candidate.to_numpy(), "note_id"
+        ].astype(str)
+    )
+    return {
+        "simultaneous_same_finger_different_pitch": PigValidation(
+            rule_id="simultaneous_same_finger_different_pitch",
+            status="pass" if not same_ids else "fail",
+            violation_count=len(same_ids),
+            violating_ids=same_ids,
+        ),
+        "simultaneous_pair_span": PigValidation(
+            rule_id="simultaneous_pair_span",
+            status="pass" if not span_ids else "fail",
+            violation_count=len(span_ids),
+            violating_ids=span_ids,
+        ),
+    }
+
+
+def derive_physical_policy(pig_notes, pig_root):
+    simple = pig_notes.loc[~pig_notes["compound_fingering"]]
+    maxima, counts = simultaneous_pair_maxima(simple)
+    boundaries = {
+        pair: max(PRACTICAL_ABS[pair], maxima[pair])
+        for pair in PRACTICAL_ABS
+        if counts.get(pair, 0) > 0
+    }
+    canonical = pig_to_canonical(simple)
+    flags = compute_audit_flags(canonical, boundaries)
+    validations = validations_from_flags(canonical, flags)
+    enabled = frozenset(
+        key for key, value in validations.items() if value.status == "pass"
+    )
+    return PhysicalPolicy(
+        boundaries, maxima, counts, enabled, validations,
+        sha256_dataset_tree(pig_root),
+    )
+```
+
+- [ ] **Step 4: Add ledger entries for both invalidity rules**
+
+```yaml
+  - rule_id: simultaneous_same_finger_different_pitch
+    kind: invalidity
+    feature: simultaneous_same_finger_different_pitch
+    unit: boolean
+    operator: is_true
+    evidence_grade: physical_invariant
+    source_keys: [pig_dataset_v102]
+    applicability: valid_assigned_same_hand_overlapping_keys
+    may_select_alone: true
+    implementation_version: 1
+    sensitivity_variants:
+      strict_overlap_1ms: {timing_epsilon_sec: 0.001}
+
+  - rule_id: simultaneous_pair_span
+    kind: invalidity
+    feature: simultaneous_pair_span_beyond_policy
+    unit: semitones
+    operator: strictly_greater_than_pair_boundary
+    evidence_grade: physical_invariant
+    source_keys: [parncutt1997ergonomic, pig_dataset_v102]
+    applicability: valid_assigned_same_hand_overlapping_keys
+    may_select_alone: true
+    implementation_version: 1
+    sensitivity_variants:
+      pig_authorized_max: {timing_epsilon_sec: 0.001}
+```
+
+Include explicit rationales matching Sections 20.4.1 and 20.4.2.
+
+- [ ] **Step 5: Serialize the auditable policy**
+
+```python
+def write_physical_policy(policy, path):
+    payload = {
+        "schema_version": 1,
+        "pig_sha256": policy.pig_sha256,
+        "timing_epsilon_sec": 0.001,
+        "span_boundaries": dict(policy.span_boundaries),
+        "observed_maxima": dict(policy.observed_maxima),
+        "observation_counts": dict(policy.observation_counts),
+        "enabled_rules": sorted(policy.enabled_rules),
+        "validations": {
+            key: asdict(value) for key, value in policy.validations.items()
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=True), encoding="utf-8")
+    return path
+```
+
+- [ ] **Step 6: Verify GREEN and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_evidence.py \
+  tests/fingering_audit/test_audit_flags.py -v
+git add fingering_audit/physical_policy.py fingering_audit/evidence.py \
+  fingering_audit/evidence/thresholds.yaml \
+  tests/fingering_audit/test_evidence.py
+git commit -m "feat: gate physical rules with PIG"
+```
+
+Expected: all selected tests pass.
+
+### Task 3: Fixed and calibrated `Noinfo` contexts
+
+**Files:**
+
+- Modify: `fingering_audit/features/audit_flags.py`
+- Modify: `tests/fingering_audit/test_audit_flags.py`
+
+**Interfaces:**
+
+- Produces `noinfo_context_mask(notes, min_run, radius,
+  sequence="recording") -> pd.Series`.
+- Produces `local_missingness_features(notes) -> pd.DataFrame` with fractions
+  for windows 5/9/17 and nearest missing-note distances.
+
+- [ ] **Step 1: Write failing fixed-grid tests**
+
+```python
+def noinfo_fixture(run_length):
+    assert run_length in {3, 5}
+    total = run_length + 4
+    return pd.DataFrame({
+        "recording_id": ["r"] * total,
+        "note_id": [f"r#{i}" for i in range(total)],
+        "note_idx": range(total),
+        "onset_sec": [float(i) for i in range(total)],
+        "offset_sec": [i + 0.5 for i in range(total)],
+        "pitch": [60] * total,
+        "pred_hand": ["R"] + [None] * run_length + ["L", "R", "L"],
+        "pred_finger": pd.array(
+            [1] + [None] * run_length + [2, 3, 4], dtype="Int64"
+        ),
+        "compound_fingering": False,
+    })
+
+
+def test_noinfo_context_uses_recording_order_and_only_selects_assigned():
+    frame = noinfo_fixture(run_length=3)
+    selected = noinfo_context_mask(frame, min_run=3, radius=2)
+    assert selected.tolist() == [
+        True, False, False, False, True, True, False,
+    ]
+
+
+def test_noinfo_grid_is_monotone():
+    frame = noinfo_fixture(run_length=5)
+    broad = noinfo_context_mask(frame, min_run=2, radius=4)
+    strict = noinfo_context_mask(frame, min_run=5, radius=1)
+    assert (strict <= broad).all()
+```
+
+- [ ] **Step 2: Verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_audit_flags.py -k noinfo -v
+```
+
+Expected: import fails because `noinfo_context_mask` is absent.
+
+- [ ] **Step 3: Implement stable run/context selection**
+
+```python
+NOINFO_RUN_LENGTHS = (2, 3, 5)
+NOINFO_CONTEXT_RADII = (1, 2, 4)
+
+
+def noinfo_context_mask(notes, *, min_run, radius, sequence="recording"):
+    if min_run not in NOINFO_RUN_LENGTHS:
+        raise ValueError(f"unsupported min_run: {min_run}")
+    if radius not in NOINFO_CONTEXT_RADII:
+        raise ValueError(f"unsupported radius: {radius}")
+    if sequence not in {"recording", "available_hand"}:
+        raise ValueError(f"unsupported sequence: {sequence}")
+    work = notes.reset_index(drop=True)
+    assigned = (
+        work["pred_hand"].isin(["L", "R"])
+        & work["pred_finger"].between(1, 5).fillna(False)
+    )
+    selected = pd.Series(False, index=work.index)
+    group_cols = ["recording_id"]
+    eligible = work
+    if sequence == "available_hand":
+        group_cols.append("pred_hand")
+        eligible = work.loc[work["pred_hand"].isin(["L", "R"])]
+    for _, group in eligible.groupby(group_cols, sort=False):
+        ordered = group.sort_values(["onset_sec", "note_idx"], kind="stable")
+        positions = list(ordered.index)
+        missing = (~assigned.loc[positions]).to_numpy()
+        start = 0
+        while start < len(positions):
+            if not missing[start]:
+                start += 1
+                continue
+            end = start
+            while end < len(positions) and missing[end]:
+                end += 1
+            if end - start >= min_run:
+                context = positions[max(0, start-radius):start]
+                context += positions[end:min(len(positions), end+radius)]
+                selected.loc[context] = assigned.loc[context]
+            start = end
+    return selected
+```
+
+- [ ] **Step 4: Write failing local-feature tests**
+
+```python
+def test_local_missingness_features_have_fixed_windows_and_distances():
+    result = local_missingness_features(noinfo_fixture(run_length=3))
+    assert list(result) == [
+        "noinfo_fraction_w5", "noinfo_fraction_w9",
+        "noinfo_fraction_w17", "nearest_noinfo_note_distance",
+        "nearest_noinfo_time_distance_sec",
+    ]
+    assert result["noinfo_fraction_w5"].between(0, 1).all()
+```
+
+- [ ] **Step 5: Implement centered windows and two-pass distances**
+
+```python
+def local_missingness_features(notes):
+    work = notes.reset_index(drop=True)
+    missing = ~(
+        work["pred_hand"].isin(["L", "R"])
+        & work["pred_finger"].between(1, 5).fillna(False)
+    )
+    result = pd.DataFrame(index=work.index)
+    note_distance = pd.Series(np.inf, index=work.index)
+    time_distance = pd.Series(np.inf, index=work.index)
+    for _, group in work.groupby("recording_id", sort=False):
+        ordered = group.sort_values(["onset_sec", "note_idx"], kind="stable")
+        positions = np.asarray(ordered.index)
+        local_missing = missing.loc[positions].to_numpy()
+        for width in (5, 9, 17):
+            result.loc[positions, f"noinfo_fraction_w{width}"] = (
+                pd.Series(local_missing.astype(float))
+                .rolling(width, center=True, min_periods=1).mean().to_numpy()
+            )
+        missing_positions = np.flatnonzero(local_missing)
+        for local_index, global_index in enumerate(positions):
+            if len(missing_positions):
+                nearest = missing_positions[
+                    np.abs(missing_positions-local_index).argmin()
+                ]
+                note_distance.loc[global_index] = abs(nearest-local_index)
+                time_distance.loc[global_index] = abs(
+                    float(ordered.iloc[nearest]["onset_sec"])
+                    - float(work.loc[global_index, "onset_sec"])
+                )
+    result["nearest_noinfo_note_distance"] = note_distance
+    result["nearest_noinfo_time_distance_sec"] = time_distance
+    return result
+```
+
+- [ ] **Step 6: Verify GREEN and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_audit_flags.py -v
+git add fingering_audit/features/audit_flags.py \
+  tests/fingering_audit/test_audit_flags.py
+git commit -m "feat: add noinfo context variants"
+```
+
+Expected: all physical, integrity, and `Noinfo` tests pass.
+
+### Task 4: Mandatory unions and sensitivity tables
+
+**Files:**
+
+- Modify: `fingering_audit/study.py`
+- Modify: `fingering_audit/filters/strategies.py`
+- Modify: `tests/fingering_audit/test_filters.py`
+- Create: `tests/fingering_audit/test_report.py`
+
+**Interfaces:**
+
+- `build_study(config, physical_policy=None) -> StudyData`.
+- `StudyData` adds `queue_masks_full`, `queue_masks_gt`, and
+  `noinfo_sensitivity`.
+- Produces `combine_mandatory(risk, physical, noinfo, integrity) -> pd.Series`.
+- Combined IDs are `<risk_set_id>__ni_k<run>_r<radius>`.
+
+- [ ] **Step 1: Write failing mandatory-union tests**
+
+```python
+def test_mandatory_union_is_complete_and_integrity_disjoint():
+    result = combine_mandatory(
+        risk=pd.Series([False, True, False, False]),
+        physical=pd.Series([True, False, False, False]),
+        noinfo=pd.Series([False, False, True, False]),
+        integrity=pd.Series([False, False, False, True]),
+    )
+    assert result.tolist() == [True, True, True, False]
+
+
+def test_mandatory_union_rejects_overlap_with_integrity():
+    with pytest.raises(ValueError, match="integrity"):
+        combine_mandatory(
+            risk=pd.Series([False]), physical=pd.Series([True]),
+            noinfo=pd.Series([False]), integrity=pd.Series([True]),
+        )
+```
+
+- [ ] **Step 2: Verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_filters.py -k mandatory -v
+```
+
+Expected: import fails because `combine_mandatory` is absent.
+
+- [ ] **Step 3: Implement the mandatory-union invariant**
+
+```python
+def combine_mandatory(*, risk, physical, noinfo, integrity):
+    masks = [
+        pd.Series(value).fillna(False).astype(bool).reset_index(drop=True)
+        for value in (risk, physical, noinfo, integrity)
+    ]
+    risk_mask, physical_mask, noinfo_mask, integrity_mask = masks
+    if (physical_mask & integrity_mask).any():
+        raise ValueError("physical and integrity masks overlap")
+    if (noinfo_mask & integrity_mask).any():
+        raise ValueError("noinfo context and integrity masks overlap")
+    return (risk_mask | physical_mask | noinfo_mask) & ~integrity_mask
+```
+
+- [ ] **Step 4: Add failing cross-product and table tests**
+
+```python
+def test_each_combined_set_contains_its_mandatory_masks(study):
+    physical = study.queue_masks_full["physical_must_alert"]
+    integrity = study.queue_masks_full["data_integrity_must_resolve"]
+    for set_id, selected in study.selections_full.items():
+        if "__ni_" not in set_id:
+            continue
+        variant = set_id.split("__", 1)[1]
+        assert (physical <= selected).all()
+        assert (study.queue_masks_full[variant] <= selected).all()
+        assert not (selected & integrity).any()
+
+
+def test_noinfo_table_has_nine_fixed_rows_and_finger_outputs(study):
+    tables = summarize_study(study, "fixture", seed=7)
+    fixed = tables["noinfo_sensitivity"].query("calibration == 'fixed'")
+    assert len(fixed) == 9
+    assert set(fixed["min_run"]) == {2, 3, 5}
+    assert set(fixed["radius"]) == {1, 2, 4}
+    assert {"gt_error_recall", "assigned_gt_error_recall",
+            "gt_precision", "error_enrichment",
+            "incremental_count_beyond_physical"} <= set(fixed)
+```
+
+- [ ] **Step 5: Integrate the queues and strategy cross-product**
+
+```python
+NOINFO_VARIANTS = {
+    f"ni_k{run}_r{radius}": (run, radius)
+    for run in (2, 3, 5) for radius in (1, 2, 4)
+}
+
+
+def _combined_sets(risk_sets, queue_masks):
+    return {
+        f"{risk_id}__{variant}": combine_mandatory(
+            risk=risk,
+            physical=queue_masks["physical_must_alert"],
+            noinfo=queue_masks[variant],
+            integrity=queue_masks["data_integrity_must_resolve"],
+        )
+        for risk_id, risk in risk_sets.items()
+        for variant in NOINFO_VARIANTS
+    }
+
+
+def _oof_noinfo_tail(notes, labels, feature_values, *, quantile):
+    score_by_id = pd.Series(
+        feature_values.to_numpy(), index=notes["note_id"]
+    )
+    labeled_score = labels["note_id"].map(score_by_id)
+    gt_mask = pd.Series(False, index=labels.index)
+    threshold_rows = []
+    fold_thresholds = []
+    for held_out in sorted(labels["recording_id"].unique()):
+        train = labels["recording_id"].ne(held_out)
+        train_scores = labeled_score.loc[train]
+        train_scores = train_scores.loc[train_scores.gt(0)].dropna()
+        threshold = (
+            float(train_scores.quantile(quantile))
+            if len(train_scores) else float("inf")
+        )
+        test = labels["recording_id"].eq(held_out)
+        gt_mask.loc[test] = (
+            labeled_score.loc[test].ge(threshold).fillna(False)
+        )
+        fold_thresholds.append(threshold)
+        threshold_rows.append({
+            "held_out_recording": held_out,
+            "quantile": quantile,
+            "threshold": threshold,
+            "train_nonzero_notes": len(train_scores),
+        })
+    deployment_threshold = float(np.median(fold_thresholds))
+    assigned = (
+        notes["pred_hand"].isin(["L", "R"])
+        & notes["pred_finger"].between(1, 5).fillna(False)
+    )
+    full_mask = feature_values.ge(deployment_threshold).fillna(False)
+    return (
+        full_mask & assigned,
+        gt_mask,
+        pd.DataFrame.from_records(threshold_rows),
+    )
+```
+
+Without a validated policy, retain `physical_candidate_diagnostic` but set
+`physical_must_alert` false. Add fixed and training-fold missingness rows to
+`StudyData.noinfo_sensitivity`; held-out recordings never fit their cutoffs.
+
+- [ ] **Step 6: Verify GREEN and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_filters.py \
+  tests/fingering_audit/test_report.py -v
+git add fingering_audit/study.py fingering_audit/filters/strategies.py \
+  tests/fingering_audit/test_filters.py \
+  tests/fingering_audit/test_report.py
+git commit -m "feat: evaluate mandatory audit unions"
+```
+
+Expected: every combined-set invariant and all sensitivity assertions pass.
+
+### Task 5: ManualCheck adapter and Vite data contract
+
+**Files:**
+
+- Modify: `ManualCheck/hard_part_selector.py`
+- Modify: `annotate/prepare_review_data.py`
+- Modify: `annotate/src/App.jsx`
+- Create: `tests/test_prepare_review_data.py`
+
+**Interfaces:**
+
+- `select_hard_parts` adds all three queue categories while preserving
+  `is_hard` and `hard_reasons`.
+- Prepared JSON includes the six fields in Section 20.8.
+- The browser consumes precomputed flags and never recomputes rules.
+
+- [ ] **Step 1: Write the failing JSON contract test**
+
+```python
+def test_review_json_separates_audit_categories():
+    notes = [
+        {"global_idx": 0, "onset_sec": 0.0, "offset_sec": 1.0,
+         "pitch": 60, "algorithm_hand": "Right", "algorithm_finger": 2,
+         "algorithm_int": 7},
+        {"global_idx": 1, "onset_sec": 0.1, "offset_sec": 0.9,
+         "pitch": 64, "algorithm_hand": "Right", "algorithm_finger": 2,
+         "algorithm_int": 7},
+    ]
+    result = apply_hard_rules_to_notes(
+        notes, ["physical_candidate_diagnostic"]
+    )
+    assert result[0]["physical_reasons"] == [
+        "same_finger_simultaneous_keys"
+    ]
+    assert result[0]["data_integrity_reasons"] == []
+    assert {"is_hard", "hard_reasons"} <= set(result[0])
+```
+
+- [ ] **Step 2: Verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/test_prepare_review_data.py -v
+```
+
+Expected: category fields are absent.
+
+- [ ] **Step 3: Replace duplicated physical logic with a canonical adapter**
+
+```python
+def _canonical_for_audit(df):
+    return pd.DataFrame({
+        "recording_id": "manualcheck",
+        "note_id": [f"manualcheck#{i}" for i in range(len(df))],
+        "note_idx": range(len(df)),
+        "onset_sec": pd.to_numeric(df.get("onset"), errors="coerce"),
+        "offset_sec": pd.to_numeric(df.get("key_offset"), errors="coerce"),
+        "pitch": pd.to_numeric(df.get("note"), errors="coerce"),
+        "pred_hand": df.get("hand"),
+        "pred_finger": pd.array(df.get("finger_int"), dtype="Int64"),
+        "compound_fingering": False,
+    })
+```
+
+Keep `rule_impossible_fingering` as a deprecated compatibility alias for
+legacy risk output; it must never populate `physical_must_alert`. Use:
+
+```python
+DEFAULT_RULES = [
+    "physical_candidate_diagnostic",
+    "non_thumb_crossing",
+    "fast_jump",
+    "noinfo_context_k3_r2",
+]
+```
+
+- [ ] **Step 4: Serialize stable category fields in every input path**
+
+```python
+def audit_fields(row):
+    return {
+        "physical_must_alert": bool(row.physical_must_alert),
+        "physical_reasons": list(row.physical_reasons),
+        "data_integrity_must_resolve": bool(
+            row.data_integrity_must_resolve
+        ),
+        "data_integrity_reasons": list(row.data_integrity_reasons),
+        "noinfo_context_alert": bool(row.noinfo_context_alert),
+        "noinfo_context_reasons": list(row.noinfo_context_reasons),
+    }
+```
+
+Call `audit_fields` from TSV, detector, ZIP, and MIDI construction so every
+note has the same JSON schema.
+
+- [ ] **Step 5: Add category-aware Vite priority**
+
+```jsx
+function explicitAuditPriority(n) {
+  if (n?.physical_must_alert) {
+    return { score: 110,
+      reason: `physical must-alert: ${(n.physical_reasons || []).join(', ')}` };
+  }
+  if (n?.data_integrity_must_resolve) {
+    return { score: 105,
+      reason: `data integrity: ${(n.data_integrity_reasons || []).join(', ')}` };
+  }
+  if (n?.noinfo_context_alert) {
+    return { score: 98,
+      reason: `near Noinfo region: ${(n.noinfo_context_reasons || []).join(', ')}` };
+  }
+  return null;
+}
+```
+
+Return `explicitAuditPriority(n)` at the start of `priorityForNote` when
+non-null.
+
+- [ ] **Step 6: Verify GREEN, build, and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/test_prepare_review_data.py -v
+npm --prefix annotate run build
+git add ManualCheck/hard_part_selector.py annotate/prepare_review_data.py \
+  annotate/src/App.jsx tests/test_prepare_review_data.py
+git commit -m "feat: expose audit queues in correction app"
+```
+
+Expected: contract tests pass and Vite exits 0.
+
+### Task 6: Pipeline artifacts and recommendation gates
+
+**Files:**
+
+- Modify: `fingering_audit/pipeline.py`
+- Modify: `fingering_audit/report.py`
+- Modify: `tests/fingering_audit/test_manifest.py`
+- Modify: `tests/fingering_audit/test_report.py`
+
+**Interfaces:**
+
+- A PIG-present run writes `data/physical_policy.yaml`.
+- Every run writes `results/noinfo_sensitivity.csv`,
+  `results/queue_summary.csv`, and
+  `results/queue_workload_per_finger.csv`.
+- Reconciliation verifies mandatory containment and integrity disjointness.
+
+- [ ] **Step 1: Write failing artifact and gate tests**
+
+```python
+def test_required_results_include_queue_tables():
+    assert "noinfo_sensitivity.csv" in REQUIRED_RESULTS
+    assert "queue_summary.csv" in REQUIRED_RESULTS
+    assert "queue_workload_per_finger.csv" in REQUIRED_RESULTS
+
+
+def test_failed_mandatory_reconciliation_cannot_finalize(tmp_path):
+    cfg = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+    )
+    manifest = RunManifest.start(cfg, run_id="mandatory-failure")
+    with pytest.raises(ValueError, match="mandatory"):
+        manifest.finalize({
+            "counts_match": True,
+            "pig_gate": True,
+            "mandatory_masks_contained": False,
+        })
+```
+
+- [ ] **Step 2: Verify RED**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_manifest.py \
+  tests/fingering_audit/test_report.py -v
+```
+
+Expected: artifact and gate assertions fail.
+
+- [ ] **Step 3: Derive, validate, persist, and pass the policy**
+
+```python
+physical_policy = None
+if pig_notes is not None:
+    physical_policy = derive_physical_policy(pig_notes, pig_root)
+    enforce_recommendation_gate(
+        physical_policy.validations,
+        physical_policy.validations.keys(),
+    )
+    write_physical_policy(
+        physical_policy,
+        manifest.run_dir / "data/physical_policy.yaml",
+    )
+study = build_study(config, physical_policy=physical_policy)
+```
+
+When PIG is absent, diagnostic candidates remain reportable,
+`physical_must_alert` remains false, and the recommendation gate remains
+closed.
+
+- [ ] **Step 4: Add required queue files and reconciliations**
+
+```python
+REQUIRED_RESULTS += (
+    "noinfo_sensitivity.csv",
+    "queue_summary.csv",
+    "queue_workload_per_finger.csv",
+)
+
+reconciliations["mandatory_masks_contained"] = all(
+    (study.queue_masks_full["physical_must_alert"] <= mask).all()
+    for set_id, mask in study.selections_full.items()
+    if "__ni_" in set_id
+)
+reconciliations["integrity_disjoint_from_assigned"] = all(
+    not (
+        study.queue_masks_full["data_integrity_must_resolve"] & mask
+    ).any()
+    for set_id, mask in study.selections_full.items()
+    if "__ni_" in set_id
+)
+```
+
+- [ ] **Step 5: Render method and queue columns**
+
+The generated report table must include these exact columns:
+
+```python
+QUEUE_REPORT_COLUMNS = [
+    "base_risk_method", "physical_policy_status",
+    "noinfo_min_run", "noinfo_context_radius",
+    "hard_count", "hard_percentage_all_notes",
+    "gt_error_recall", "assigned_gt_error_recall",
+    "gt_precision", "error_enrichment",
+    "incremental_count_beyond_physical",
+    "incremental_errors_beyond_physical",
+]
+```
+
+Per-predicted-finger workload and per-true-finger recall remain separate
+tables keyed by `set_id`.
+
+- [ ] **Step 6: Verify GREEN and commit**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest \
+  tests/fingering_audit/test_manifest.py \
+  tests/fingering_audit/test_report.py -v
+git add fingering_audit/pipeline.py fingering_audit/report.py \
+  tests/fingering_audit/test_manifest.py \
+  tests/fingering_audit/test_report.py
+git commit -m "feat: report physical and noinfo queues"
+```
+
+Expected: all selected tests pass and fixture verification finds every queue
+table.
+
+### Task 7: Full research run and delivery
+
+**Files:**
+
+- Modify: `docs/fingering-audit-complete.md`
+- Generate, ignored: `artifacts/fingering_audit/<run-id>/`
+
+**Interfaces:**
+
+- Produces exact physical/noinfo workload-recall tables in this document.
+- Produces no recommended Vite queue unless PIG and reconciliation gates pass.
+
+- [ ] **Step 1: Run the complete Python suite**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m pytest -q
+```
+
+Expected: exit 0 with zero failures.
+
+- [ ] **Step 2: Run the full unattended audit**
+
+```bash
+./run_fingering_audit.sh --run-label physical-noinfo-audit
+```
+
+Expected: complete run. Without authoritative local PIG it writes
+`RECOMMENDATION_GATE_CLOSED.json`; with PIG it writes `SUCCESS.json` only
+after validators and reconciliations pass.
+
+- [ ] **Step 3: Verify the exact generated run**
+
+```bash
+/home/junhyungp/autofinger/.venv/bin/python -m fingering_audit report \
+  --verify-only
+```
+
+Expected: `verification_status` is `PASS` and the manifest truthfully reports
+the PIG gate. With no `--run-dir`, verification selects the newest run written
+by Step 2.
+
+- [ ] **Step 4: Update consolidated results**
+
+Update Sections 1, 10, 12, 14, 17, and 19 and append exact generated tables
+for physical candidates, enabled must-alerts, integrity records, every
+`Noinfo` variant, every strategy combination, GT/assigned recall, precision,
+enrichment, incremental contribution, and all ten fingers.
+
+- [ ] **Step 5: Build Vite**
+
+```bash
+npm --prefix annotate run build
+```
+
+Expected: exit 0 and only documented dangling-media skips.
+
+- [ ] **Step 6: Verify diff and source immutability**
+
+```bash
+git diff --check
+git status --short
+git diff --name-only -- PianoVAM_v1.0/Fingering/
+```
+
+Expected: no whitespace errors, only intended tracked changes, and no source
+fingering TSV changes.
+
+- [ ] **Step 7: Commit the consolidated results and push**
+
+```bash
+git add docs/fingering-audit-complete.md
+git commit -m "docs: record physical and noinfo audit results"
+git push origin 260724-audit
+```
+
+Expected: GitHub updates `260724-audit` to the final verified commit.
