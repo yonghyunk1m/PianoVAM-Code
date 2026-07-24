@@ -3,7 +3,9 @@
 **Study date:** 2026-07-23  
 **Consolidated:** 2026-07-24  
 **Run ID:** `20260723T122049Z-publication-audit-746e73d5`  
-**Status:** computational study complete; publication recommendation gate closed
+**Status:** computational study complete; publication recommendation gate
+closed; physical and missing-context extension specified, implementation
+pending
 
 ## 1. Executive summary
 
@@ -617,3 +619,320 @@ The legacy set is larger and still recalls only 7.91% of all GT errors.
 Publication should wait until missing labels and the PIG gate are resolved.
 Any later recommendation must be selected from validity-gated, out-of-fold
 results rather than by moving thresholds toward a desired queue size.
+
+## 20. Approved physical and missing-context extension design
+
+This section is the implementation specification approved on 2026-07-24. It
+supersedes the legacy interpretation of `impossible_fingering` but does not
+alter the completed results in Sections 9–12. Those tables remain the baseline
+against which the extension will be evaluated.
+
+### 20.1 Objectives and non-objectives
+
+The extension must:
+
+1. alert every assigned note implicated in a defensible physical
+   contradiction;
+2. prevent any such alert from being removed by a blacklist, whitelist, or
+   hybrid strategy;
+3. keep missing or malformed labels in a separate publication-blocking data
+   queue;
+4. alert assigned notes near substantial `Noinfo` regions;
+5. report the workload, authoritative recall, precision, enrichment, and
+   per-finger distribution of every threshold variant; and
+6. use the same rule implementation for the research pipeline and Vite data
+   preparation.
+
+The extension must not:
+
+- call a sequential crossing, leap, or awkward transition physically
+  impossible;
+- infer simultaneous notes by inventing an offset;
+- choose a threshold merely to approach 30,000 notes;
+- count a missing prediction as an assigned finger to audit; or
+- permit a physical-invalidity rule to enter a recommended set unless it has
+  zero violations on the complete authoritative PIG copy.
+
+### 20.2 Queue model
+
+Every PianoVAM note can carry independent boolean flags and reason tokens from
+three queues:
+
+| Queue | Population | Meaning | Publication effect |
+|---|---|---|---|
+| `physical_must_alert` | assigned fingers only | a PIG-gated simultaneous physical contradiction | always included in human fingering audit |
+| `data_integrity_must_resolve` | incomplete or malformed records | no auditable assigned finger or insufficient valid source data | blocks publication but is not assigned-finger audit workload |
+| `noinfo_context_alert` | assigned fingers only | nearby missing labels make detector output less trustworthy | always included using the selected threshold variant |
+
+All other ergonomic, detector, model, and musical-context features remain risk
+signals. For a strategy \(s\) and missing-context variant \(v\):
+
+```text
+assigned_audit(s, v)
+    = physical_must_alert
+      OR noinfo_context_alert(v)
+      OR strategy_risk_selection(s)
+
+publication_blockers
+    = assigned_audit(s, v)
+      UNION data_integrity_must_resolve
+```
+
+Reports must show `assigned_audit` and `data_integrity_must_resolve`
+separately. The assigned-finger hard-note percentage uses all 508,621 notes as
+its denominator for continuity with the baseline tables, but its numerator
+must not contain `Noinfo` records.
+
+### 20.3 Shared physical-rule engine
+
+A single module will accept a canonical note table and return note-level masks
+plus reason tokens. Thin adapters may rename columns for the TSV/Vite and
+research callers, but may not reimplement rule logic.
+
+Required canonical fields are:
+
+```text
+recording_id, note_id, onset_sec, offset_sec, pitch,
+pred_hand, pred_finger, compound_fingering
+```
+
+The physical engine will:
+
+- partition notes by recording and assigned hand;
+- inspect every pair of simultaneously depressed keys, not only adjacent rows;
+- use strict interval overlap,
+  `later_onset < earlier_offset - 0.001 seconds`;
+- treat the 1 ms timing epsilon as numerical tolerance, not a musical
+  threshold, and keep it explicit and versioned;
+- return data-integrity reasons instead of fabricating overlap when an onset,
+  offset, pitch, hand, or finger is invalid; and
+- flag both notes participating in a physical contradiction.
+
+The implementation should use a sweep over active notes so its cost depends on
+the number of active same-hand notes rather than comparing every pair in a
+recording.
+
+### 20.4 Physical must-alert rules
+
+#### 20.4.1 Same finger on separated simultaneous keys
+
+Two different pitches assigned to the same within-hand finger during a strict
+key-depression overlap form an invalidity candidate. PIG validation excludes a
+pair whenever either note has a compound fingering token. This conservative
+treatment preserves finger-substitution semantics instead of flattening the
+token to its first component.
+
+The rule becomes `physical_must_alert` only when the complete PIG validation
+returns zero violations. Otherwise the recommendation gate closes and the
+rule is excluded from every recommended must-alert mask.
+
+#### 20.4.2 Simultaneous finger-pair span
+
+Consecutive melodic span boundaries in Parncutt et al. are ergonomic risk
+limits, not universal physical limits. They therefore cannot be copied
+directly into the invalidity layer.
+
+For each unordered finger pair, the simultaneous invalidity boundary will be:
+
+```text
+physical_boundary(pair)
+    = max(
+        abs(published MinPrac boundary),
+        abs(published MaxPrac boundary),
+        maximum absolute valid simultaneous span for that pair observed in PIG
+      )
+```
+
+Only spans strictly beyond this boundary are invalidity candidates. Equality
+is accepted. Taking both practical directions and the observed PIG maximum
+avoids asserting a smaller physical reach merely because of hand direction.
+If a pair has no valid PIG coverage, no physical boundary is asserted for that
+pair; its span remains an ergonomic risk signal. The frozen boundary artifact
+must record:
+
+- PIG version and dataset checksum;
+- source rule and table locator;
+- observed PIG maximum and observation count by pair and hand;
+- chosen boundary;
+- number and IDs of PIG violations; and
+- implementation version and timing epsilon.
+
+This maximum-of-two-sources construction is intentionally conservative. It
+cannot establish a universal anatomical limit, so reports must describe it as
+a PIG-authorized audit contradiction rather than a claim about every possible
+pianist.
+
+#### 20.4.3 Rules explicitly excluded from physical invalidity
+
+The following remain risk signals even if the legacy Vite selector previously
+placed them under `impossible_fingering`:
+
+- non-thumb crossing;
+- sequential finger-pair span;
+- large sequential leap;
+- fast position-change rate;
+- hand-region overlap; and
+- stepwise finger-order violation.
+
+### 20.5 Data-integrity queue
+
+`data_integrity_must_resolve` includes:
+
+- missing hand or finger;
+- hand outside `L`/`R`;
+- finger outside 1–5;
+- missing or invalid pitch;
+- missing onset or offset; and
+- offset earlier than onset.
+
+Each record retains a specific reason token. Invalid timing prevents physical
+overlap evaluation; it must never be replaced by an assumed 0.5-second note.
+These records remain publication blockers but are excluded from
+assigned-finger recall and predicted-finger workload tables.
+
+### 20.6 `Noinfo`-context alert family
+
+An assigned note is a missing-context candidate when it falls within a
+recording-wide musical-sequence radius around a consecutive run of `Noinfo`
+assignments. Notes are sorted stably by onset and source note index. This is
+the primary definition because a missing record commonly has no reliable hand
+with which to construct a hand-specific sequence.
+
+When a missing-finger record still has a valid hand, the study also computes a
+separately named same-hand variant. It is never substituted silently for the
+recording-wide definition.
+
+The fixed sensitivity grid is:
+
+| Dimension | Values |
+|---|---|
+| minimum consecutive `Noinfo` run | 2, 3, 5 notes |
+| assigned-note radius on each side | 1, 2, 4 assigned notes |
+
+The existing rule—run length at least 3 with two assigned context notes on
+each side—is retained as `legacy_noinfo_3_r2`. Every combination in the
+3-by-3 grid is evaluated and reported; none is called research-derived.
+
+The study will also evaluate fold-calibrated local-missingness variants.
+For each assigned note it will compute in recording-wide order, and in the
+available-hand subset when possible:
+
+- adjacent `Noinfo` run length;
+- number and proportion of `Noinfo` labels in centered 5-, 9-, and 17-note
+  sequence windows; and
+- distance in notes and seconds to the nearest `Noinfo` run.
+
+Any empirical cutoff must be fitted on the training recordings of each
+leave-one-recording-out fold. Held-out labels cannot influence its threshold.
+The predeclared upper-tail variants are the 99.5th, 99th, and 97.5th
+percentiles of nonzero training-fold local missingness. The threshold family
+and selection rule are therefore frozen before viewing pooled test results.
+
+The final report must contain one row per fixed and fold-calibrated variant
+with:
+
+- threshold definition and evidence grade;
+- selected assigned notes and hard-note percentage;
+- GT recall and assigned-finger recall;
+- precision and error enrichment;
+- selected notes and recall for `L1`–`L5` and `R1`–`R5`;
+- incremental workload and errors beyond `physical_must_alert`; and
+- overlap with each blacklist, whitelist, and hybrid risk strategy.
+
+The final recommended missing-context variant is selected for authoritative
+out-of-fold validity and recall, not proximity to a target note count. If no
+variant demonstrates defensible held-out value, the report retains the table
+and closes the recommendation gate rather than silently choosing the legacy
+threshold.
+
+### 20.7 Filter-set integration
+
+The report will preserve the existing risk-only masks so their marginal
+behavior remains inspectable. It will add:
+
+1. standalone physical, integrity, and `Noinfo`-context rows;
+2. every risk strategy combined with each fixed `Noinfo` variant and the
+   invariant physical mask; and
+3. a smaller comparison table using the chosen `Noinfo` variant, if one passes
+   the recommendation criteria.
+
+Programmatic reconciliation must assert for every combined assigned-audit
+mask that:
+
+```text
+physical_must_alert <= combined_mask
+noinfo_context_alert(selected_variant) <= combined_mask
+combined_mask AND data_integrity_must_resolve = empty
+```
+
+This makes it impossible for whitelist logic to sieve an alerted physical
+contradiction or for integrity records to leak into assigned-finger metrics.
+
+### 20.8 Vite data contract
+
+Prepared review JSON will add:
+
+```text
+physical_must_alert: boolean
+physical_reasons: string[]
+data_integrity_must_resolve: boolean
+data_integrity_reasons: string[]
+noinfo_context_alert: boolean
+noinfo_context_reasons: string[]
+```
+
+The existing `is_hard` and `hard_reasons` fields remain available for
+backward compatibility. Their value is the union of enabled assigned-audit
+reasons; integrity reasons remain separately identifiable. Priority order is:
+
+1. physical must-alert;
+2. data-integrity must-resolve;
+3. `Noinfo`-context alert; and
+4. other strategy risks.
+
+The Vite client displays the category and reason but does not recompute the
+rules. Python preprocessing remains the authoritative implementation.
+
+### 20.9 Failure behavior
+
+The extension fails closed when:
+
+- PIG is unavailable or incomplete;
+- the PIG checksum differs from the frozen boundary artifact;
+- an invalidity validator is missing;
+- any enabled physical rule has one or more PIG violations;
+- a combined strategy omits a mandatory physical or selected
+  `Noinfo`-context note;
+- source and exported note counts do not reconcile; or
+- a required per-finger group is absent from reporting.
+
+A failed gate may still produce diagnostic sensitivity tables, but it may not
+write a recommended Vite queue or `SUCCESS.json`.
+
+### 20.10 Test and acceptance criteria
+
+Implementation follows test-first development. Automated tests must
+demonstrate:
+
+- same-finger overlap flags both different-pitch notes;
+- repeated pitch and boundary-touching intervals are not false overlaps;
+- non-adjacent active chord notes are compared;
+- missing offsets produce integrity flags, not invented physical alerts;
+- exact span boundaries pass and strictly larger spans flag;
+- uncovered finger pairs stay risk-only;
+- compound PIG tokens are handled without flattening their semantics;
+- non-thumb crossings never enter `physical_must_alert`;
+- all nine fixed `Noinfo` variants select the expected recording-wide context;
+- recording-wide and available-hand `Noinfo` variants remain explicitly
+  distinguishable;
+- every combined mask contains both mandatory assigned-alert masks;
+- integrity records are absent from assigned-finger denominators;
+- PIG violations close the recommendation gate and expose note IDs;
+- per-finger totals reconcile with overall totals; and
+- Vite preparation serializes the new category fields and preserves legacy
+  fields.
+
+Completion requires a fresh full Python test run, a fresh Vite production
+build, successful artifact reconciliation, and a consolidated-document update
+with the resulting physical-rule and `Noinfo` sensitivity tables. No result
+may be described as recommendable while the authoritative PIG gate is closed.
