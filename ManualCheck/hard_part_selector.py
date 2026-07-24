@@ -12,6 +12,11 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+from fingering_audit.features.audit_flags import (
+    compute_audit_flags,
+    noinfo_context_mask,
+)
+
 
 # ---------------------------------------------------------------------------
 # TSV loader
@@ -43,54 +48,49 @@ def load_fingering_tsv(path: str) -> pd.DataFrame:
     return df
 
 
-# ---------------------------------------------------------------------------
-# Helper: max comfortable hand span in semitones between two fingers
-# Based on standard piano pedagogy (adult average hand).
-# ---------------------------------------------------------------------------
-#   finger pair (lo, hi) → max semitone span (threshold for flagging)
-#   Tuned so that an octave (12st) with thumb+pinky is NOT flagged;
-#   only truly extreme stretches (>15st, e.g. 10th or 12th) are flagged.
-_MAX_SPAN = {
-    (1, 2): 7,   (1, 3): 12,  (1, 4): 14, (1, 5): 16,
-    (2, 3): 4,   (2, 4): 7,   (2, 5): 10,
-    (3, 4): 4,   (3, 5): 7,
-    (4, 5): 6,
-}
+def _canonical_for_audit(df: pd.DataFrame) -> pd.DataFrame:
+    """Adapt ManualCheck's legacy columns to the shared audit contract."""
 
-def _max_span(f1: int, f2: int) -> int:
-    lo, hi = min(f1, f2), max(f1, f2)
-    return _MAX_SPAN.get((lo, hi), 12)
+    def column(name: str) -> pd.Series:
+        if name in df:
+            return df[name].reset_index(drop=True)
+        return pd.Series([pd.NA] * len(df))
+
+    return pd.DataFrame({
+        "recording_id": ["manualcheck"] * len(df),
+        "note_id": [f"manualcheck#{i}" for i in range(len(df))],
+        "note_idx": range(len(df)),
+        "onset_sec": pd.to_numeric(column("onset"), errors="coerce"),
+        "offset_sec": pd.to_numeric(column("key_offset"), errors="coerce"),
+        "pitch": pd.to_numeric(column("note"), errors="coerce"),
+        "pred_hand": column("hand"),
+        "pred_finger": pd.array(
+            pd.to_numeric(column("finger_int"), errors="coerce"),
+            dtype="Int64",
+        ),
+        "compound_fingering": False,
+    })
 
 
 # ===========================================================================
-# RULE 1  — Physically impossible fingering
+# RULE 1  — Shared physical diagnostic and legacy crossing risk
 # ===========================================================================
 
-def rule_impossible_fingering(
+def rule_physical_candidate_diagnostic(df: pd.DataFrame) -> pd.Series:
+    """Return shared-engine physical candidates, excluding invalid records."""
+    flags = compute_audit_flags(_canonical_for_audit(df))
+    return pd.Series(
+        (flags.physical_candidate & ~flags.integrity).to_numpy(),
+        index=df.index,
+    )
+
+
+def rule_non_thumb_crossing(
     df: pd.DataFrame,
     cross_timing_ms: float = 500.0,
 ) -> pd.Series:
-    """
-    Two sub-checks:
-
-    (a) Non-thumb finger crossing: consecutive same-hand notes where the finger
-        direction opposes the expected direction without a thumb (finger 1).
-        R hand: ascending pitch → finger should increase (or thumb cross).
-        L hand: ascending pitch → finger should decrease (or thumb cross).
-        Flagged only when neither the previous nor current finger is the thumb
-        AND the two notes are within cross_timing_ms of each other — a cross
-        more than 500 ms apart gives the hand time to reposition, so it is not
-        physically impossible.
-
-    (b) Same-hand chord span overreach: two notes in the same hand that overlap
-        in time (held simultaneously) whose pitch distance exceeds the comfortable
-        span for that finger pair. This catches physically impossible chord
-        stretches, not sequential jumps. No extra timing gate needed here because
-        simultaneous overlap already implies close timing.
-    """
+    """Flag quick non-thumb crossings as a review risk, not impossibility."""
     flags = pd.Series(False, index=df.index)
-
-    has_offset = "key_offset" in df.columns
 
     for hand in ("L", "R"):
         mask = df["hand"] == hand
@@ -101,16 +101,14 @@ def rule_impossible_fingering(
         notes   = sub["note"].values
         fingers = sub["finger_int"].values
         onsets  = sub["onset"].values if "onset" in df.columns else np.zeros(len(sub))
-        offsets = sub["key_offset"].values if has_offset else onsets + 0.5
         idxs    = list(sub.index)
 
         for i in range(1, len(notes)):
             f_prev, f_curr = fingers[i-1], fingers[i]
             p_prev, p_curr = notes[i-1], notes[i]
-            if f_prev is None or f_curr is None:
+            if pd.isna(f_prev) or pd.isna(f_curr):
                 continue
 
-            # (a) Finger-cross without thumb — only flag within timing window
             if p_prev != p_curr:  # skip repeated notes
                 dt_ms     = (onsets[i] - onsets[i-1]) * 1000
                 pitch_up  = bool(p_curr > p_prev)
@@ -120,14 +118,28 @@ def rule_impossible_fingering(
                     flags.iloc[idxs[i-1]] = True
                     flags.iloc[idxs[i]]   = True
 
-            # (b) Chord span overreach: notes overlap in time → held simultaneously
-            if onsets[i] < offsets[i-1]:   # note i starts before note i-1 ends
-                pitch_span = abs(int(p_curr) - int(p_prev))
-                if pitch_span > _max_span(f_prev, f_curr):
-                    flags.iloc[idxs[i-1]] = True
-                    flags.iloc[idxs[i]]   = True
-
     return flags
+
+
+def rule_impossible_fingering(df: pd.DataFrame) -> pd.Series:
+    """Deprecated compatibility alias for legacy review-risk output."""
+    return (
+        rule_physical_candidate_diagnostic(df)
+        | rule_non_thumb_crossing(df)
+    )
+
+
+def rule_noinfo_context_k3_r2(df: pd.DataFrame) -> pd.Series:
+    """Flag two assigned neighbors around runs of at least three Noinfo notes."""
+    canonical = _canonical_for_audit(df)
+    integrity = compute_audit_flags(canonical).integrity
+    selected = noinfo_context_mask(
+        canonical,
+        min_run=3,
+        radius=2,
+        integrity_mask=integrity,
+    )
+    return pd.Series(selected.to_numpy(), index=df.index)
 
 
 # ===========================================================================
@@ -371,7 +383,9 @@ def rule_stepwise_order_violation(
 # ===========================================================================
 
 RULES: dict[str, callable] = {
-    # Physically impossible
+    # Shared physical diagnostic and deprecated compatibility name
+    "physical_candidate_diagnostic": rule_physical_candidate_diagnostic,
+    "non_thumb_crossing":             rule_non_thumb_crossing,
     "impossible_fingering":       rule_impossible_fingering,
     # MediaPipe unreliable situations
     "fast_jump":                  rule_fast_jump,
@@ -380,25 +394,30 @@ RULES: dict[str, callable] = {
     # Data quality / no assignment
     "noinfo":                     rule_noinfo,
     "noinfo_cluster":             rule_noinfo_cluster,
+    "noinfo_context_k3_r2":       rule_noinfo_context_k3_r2,
     # Fingering logic errors
     "stepwise_order_violation":   rule_stepwise_order_violation,
 }
 
 RULE_DESCRIPTIONS: dict[str, str] = {
-    "impossible_fingering":     "Physically impossible: finger cross w/o thumb (within 500 ms), or span overreach",
+    "physical_candidate_diagnostic": "Shared physical candidate diagnostic (not must-alert without a validated policy)",
+    "non_thumb_crossing":       "Non-thumb crossing risk within 500 ms",
+    "impossible_fingering":     "Deprecated legacy physical/crossing review risk",
     "fast_jump":                "Fast position jump: hand blurry in video, MediaPipe inaccurate",
     "hand_overlap":             "Hand position overlap: L/R pitch regions intersect",
     "rapid_alternation":        "Rapid L/R alternation (tremolo): hand identity ambiguous",
     "noinfo":                   "No finger assigned (Noinfo)",
     "noinfo_cluster":           "Cluster of 3+ consecutive Noinfo: tracking completely lost",
+    "noinfo_context_k3_r2":     "Two assigned-note neighbors around a run of 3+ Noinfo notes",
     "stepwise_order_violation": "Finger order wrong in stepwise motion (w/o thumb cross)",
 }
 
 # Default rules to enable in the UI
 DEFAULT_RULES = [
-    "impossible_fingering",
+    "physical_candidate_diagnostic",
+    "non_thumb_crossing",
     "fast_jump",
-    "noinfo_cluster",
+    "noinfo_context_k3_r2",
 ]
 
 
@@ -409,12 +428,42 @@ DEFAULT_RULES = [
 def select_hard_parts(
     df: pd.DataFrame,
     enabled_rules: list[str] | None = None,
+    physical_policy=None,
 ) -> pd.DataFrame:
     """
-    Apply enabled rules. Returns df with 'is_hard' and 'hard_reasons' columns.
+    Apply enabled rules and expose stable shared-audit category columns.
+
+    Physical candidates remain diagnostic unless ``physical_policy`` explicitly
+    enables the corresponding PIG-validated rule.
     """
     if enabled_rules is None:
         enabled_rules = list(RULES.keys())
+
+    canonical = _canonical_for_audit(df)
+    boundaries = (
+        physical_policy.span_boundaries
+        if physical_policy is not None
+        else None
+    )
+    audit = compute_audit_flags(canonical, boundaries)
+    integrity = audit.integrity.astype(bool)
+    physical_candidate = audit.physical_candidate.astype(bool) & ~integrity
+    physical_must_alert = pd.Series(False, index=canonical.index)
+    if physical_policy is not None:
+        enabled_physical = physical_policy.enabled_rules
+        if "simultaneous_same_finger_different_pitch" in enabled_physical:
+            physical_must_alert |= audit.same_finger_candidate
+        if "simultaneous_pair_span" in enabled_physical:
+            physical_must_alert |= audit.span_candidate
+    physical_must_alert &= ~integrity
+
+    noinfo_context = noinfo_context_mask(
+        canonical,
+        min_run=3,
+        radius=2,
+        integrity_mask=integrity,
+    )
+    noinfo_context &= ~integrity
 
     reasons: list[list[str]] = [[] for _ in range(len(df))]
 
@@ -429,6 +478,28 @@ def select_hard_parts(
     df = df.copy()
     df["hard_reasons"] = [",".join(r) for r in reasons]
     df["is_hard"]      = df["hard_reasons"].str.len() > 0
+    df["physical_must_alert"] = physical_must_alert.to_numpy(dtype=bool)
+    df["physical_reasons"] = [
+        list(value) if candidate else []
+        for value, candidate in zip(
+            audit.physical_reasons,
+            physical_candidate,
+        )
+    ]
+    df["data_integrity_must_resolve"] = integrity.to_numpy(dtype=bool)
+    df["data_integrity_reasons"] = [
+        list(value) for value in audit.integrity_reasons
+    ]
+    noinfo_enabled = "noinfo_context_k3_r2" in enabled_rules
+    df["noinfo_context_alert"] = (
+        noinfo_context.to_numpy(dtype=bool)
+        if noinfo_enabled
+        else False
+    )
+    df["noinfo_context_reasons"] = [
+        ["noinfo_context_k3_r2"] if noinfo_enabled and value else []
+        for value in noinfo_context
+    ]
     return df
 
 

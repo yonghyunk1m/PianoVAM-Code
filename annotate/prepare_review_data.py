@@ -50,8 +50,10 @@ NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F",
               "F#", "G", "G#", "A", "A#", "B"]
 
 HARD_RULE_PRIORITY = {
+    "physical_candidate_diagnostic": 100,
     "impossible_fingering": 100,
-    "noinfo_cluster": 96,
+    "noinfo_context_k3_r2": 96,
+    "noinfo_cluster": 94,
     "fast_jump": 92,
     "hand_overlap": 88,
     "rapid_alternation": 84,
@@ -108,6 +110,30 @@ def review_reason_for_reasons(reasons: list[str]) -> str | None:
         return None
     labels = [RULE_DESCRIPTIONS.get(reason, reason) for reason in reasons]
     return "ManualCheck rules: " + " | ".join(labels)
+
+
+def audit_fields(row: Any | None) -> dict[str, Any]:
+    """Serialize the stable audit-category schema for one prepared note."""
+    return {
+        "physical_must_alert": bool(
+            getattr(row, "physical_must_alert", False)
+        ),
+        "physical_reasons": list(
+            getattr(row, "physical_reasons", ()) or ()
+        ),
+        "data_integrity_must_resolve": bool(
+            getattr(row, "data_integrity_must_resolve", False)
+        ),
+        "data_integrity_reasons": list(
+            getattr(row, "data_integrity_reasons", ()) or ()
+        ),
+        "noinfo_context_alert": bool(
+            getattr(row, "noinfo_context_alert", False)
+        ),
+        "noinfo_context_reasons": list(
+            getattr(row, "noinfo_context_reasons", ()) or ()
+        ),
+    }
 
 
 def ensure_asset(src: Path, dest_dir: Path, public_prefix: str, *, copy: bool) -> str:
@@ -394,20 +420,20 @@ def apply_hard_rules_to_notes(
 ) -> list[dict[str, Any]]:
     df = pd.DataFrame([
         {
-            "onset": note["onset_sec"],
-            "key_offset": note["offset_sec"],
-            "note": note["pitch"],
+            "onset": note.get("onset_sec"),
+            "key_offset": note.get("offset_sec"),
+            "note": note.get("pitch"),
             "velocity": note.get("velocity"),
-            "hand": "L" if note.get("algorithm_hand") == "Left"
-                    else "R" if note.get("algorithm_hand") == "Right"
-                    else "Noinfo",
-            "finger": note.get("algorithm_finger", "Noinfo")
-                      if note.get("algorithm_int") else "Noinfo",
+            "hand": normalize_hand_name(note.get("algorithm_hand"))
+                    or "Noinfo",
+            "finger": note.get("algorithm_finger")
+                      if note.get("algorithm_finger") is not None
+                      else "Noinfo",
         }
         for note in notes
     ])
     df["finger_int"] = [
-        hand_finger_to_int(row["hand"], parse_optional_int(row["finger"]))
+        parse_optional_int(row["finger"])
         for _, row in df.iterrows()
     ]
     flagged = select_hard_parts(df, enabled_rules)
@@ -421,6 +447,7 @@ def apply_hard_rules_to_notes(
             "hard_reasons": hard_reasons,
             "review_priority": review_priority_for_reasons(hard_reasons),
             "review_reason": review_reason_for_reasons(hard_reasons),
+            **audit_fields(row),
         })
     return updated
 
@@ -462,8 +489,9 @@ def build_notes_from_midi(
             "hard_reasons": [],
             "review_priority": None,
             "review_reason": None,
+            **audit_fields(None),
         })
-    return notes
+    return apply_hard_rules_to_notes(notes, [])
 
 
 def build_notes_from_tsv(
@@ -522,6 +550,7 @@ def build_notes_from_tsv(
             "hard_reasons": hard_reasons,
             "review_priority": review_priority,
             "review_reason": review_reason_for_reasons(hard_reasons),
+            **audit_fields(row),
         })
 
     return notes
@@ -610,6 +639,7 @@ def build_notes_from_fingering_zip(
             "hard_reasons": [],
             "review_priority": None,
             "review_reason": None,
+            **audit_fields(None),
         })
 
     notes = apply_hard_rules_to_notes(notes, enabled_rules)

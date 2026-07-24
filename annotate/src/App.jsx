@@ -700,15 +700,15 @@ export default function App() {
   }
 
   function jumpNextHard() {
-    // Jump to the next hard note that hasn't been explicitly human-reviewed.
-    // Hard = is_hard flag OR any hard_reasons entry.
+    // Jump to the next explicit audit-category or legacy hard note that has
+    // not been explicitly human-reviewed.
     // Reviewed = verdict has a timestamp without source (explicit button press).
     for (let pass = 0; pass < 2; pass++) {
       const begin = pass === 0 ? idx + 1 : 0;
       const end   = pass === 0 ? data.notes.length : idx;
       for (let i = begin; i < end; i++) {
         const n = data.notes[i];
-        if (!n.is_hard && hardReasonsForNote(n).length === 0) continue;
+        if (!isAuditReviewNote(n)) continue;
         const v = verdicts[`${n.trial}#${n.note_idx}`];
         if (v && v.timestamp && !v.source) continue;   // already reviewed
         setIdx(i); return;
@@ -721,7 +721,7 @@ export default function App() {
       const end   = pass === 0 ? -1 : idx;
       for (let i = begin; i > end; i--) {
         const n = data.notes[i];
-        if (!n.is_hard && hardReasonsForNote(n).length === 0) continue;
+        if (!isAuditReviewNote(n)) continue;
         const v = verdicts[`${n.trial}#${n.note_idx}`];
         if (v && v.timestamp && !v.source) continue;   // already reviewed
         setIdx(i); return;
@@ -853,7 +853,7 @@ export default function App() {
   const hardStats = (() => {
     let total = 0, done = 0;
     for (const n of data.notes) {
-      if (!n.is_hard && hardReasonsForNote(n).length === 0) continue;
+      if (!isAuditReviewNote(n)) continue;
       total++;
       const nv = verdicts[`${n.trial}#${n.note_idx}`];
       if (nv && nv.timestamp && !nv.source) done++;
@@ -1010,7 +1010,7 @@ export default function App() {
                 }
               } else {
                 const p = priorityForNote(note);
-                const isHardRuleNote = note.is_hard || hardReasonsForNote(note).length > 0;
+                const isHardRuleNote = isAuditReviewNote(note);
                 const isImputed = v && v.source === 'imputed';
                 const isAlgoBulk = v && v.source === 'algo' && !reviewed;
                 if (p && !reviewed) {
@@ -1307,8 +1307,10 @@ const SUSPECT = {
 };
 
 const HARD_RULE_PRIORITY = {
+  physical_candidate_diagnostic: 100,
   impossible_fingering: 100,
-  noinfo_cluster: 96,
+  noinfo_context_k3_r2: 96,
+  noinfo_cluster: 94,
   fast_jump: 92,
   hand_overlap: 88,
   rapid_alternation: 84,
@@ -1327,8 +1329,36 @@ function hardReasonsForNote(n) {
   return [];
 }
 
+function explicitAuditPriority(n) {
+  if (n?.physical_must_alert) {
+    return {
+      score: 110,
+      reason: `physical must-alert: ${(n.physical_reasons || []).join(', ')}`,
+    };
+  }
+  if (n?.data_integrity_must_resolve) {
+    return {
+      score: 105,
+      reason: `data integrity: ${(n.data_integrity_reasons || []).join(', ')}`,
+    };
+  }
+  if (n?.noinfo_context_alert) {
+    return {
+      score: 98,
+      reason: `near Noinfo region: ${(n.noinfo_context_reasons || []).join(', ')}`,
+    };
+  }
+  return null;
+}
+
+function isAuditReviewNote(n) {
+  return !!explicitAuditPriority(n)
+    || !!n?.is_hard
+    || hardReasonsForNote(n).length > 0;
+}
+
 function hasManualPriority(data) {
-  return !!data?.notes?.some(n => n?.is_hard || hardReasonsForNote(n).length > 0);
+  return !!data?.notes?.some(isAuditReviewNote);
 }
 
 function reviewedLabel(v) {
@@ -1357,6 +1387,8 @@ function reviewedDetail(note, v, priority) {
 
 function priorityForNote(n) {
   if (!n) return null;
+  const auditPriority = explicitAuditPriority(n);
+  if (auditPriority) return auditPriority;
   const hardReasons = hardReasonsForNote(n);
   if (n.is_hard || hardReasons.length > 0) {
     const score = typeof n.review_priority === 'number'
