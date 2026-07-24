@@ -1,0 +1,16 @@
+schema_version: 1
+noninteractive: true
+random_seed: 20260723
+repository_root: ../..
+pianovam_fingering_dir: PianoVAM_v1.0/Fingering
+ground_truth_module: FingeringDetection/detection/fingergt.py
+pig_search_roots:
+  - PIG
+  - /workspace/PIG
+detector_search_roots:
+  - ../video-to-fingering
+artifact_root: artifacts/fingering_audit
+target_budgets: [10000, 20000, 30000, 50000]
+overwrite_sources: false
+materialize_missing_detector_outputs: true
+strict_recommendation_gate: true

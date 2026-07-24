@@ -2,6 +2,8 @@
 *.mid
 *.tsv
 *.json
+!annotate/package.json
+!annotate/package-lock.json
 
 # annotate/
 annotate/node_modules/
@@ -18,3 +20,11 @@ annotate/public/data/*
 !annotate/public/audio/sample.wav
 !annotate/public/videos/sample.mp4
 !annotate/public/data/sample.json
+
+# Automated fingering-audit research artifacts
+artifacts/fingering_audit/
+annotate/public/data/audit/
+
+# Python caches
+__pycache__/
+*.py[cod]

@@ -5,6 +5,52 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 
 /**
+ * Vite's default public copier aborts when generated media symlinks point to
+ * an unmounted dataset volume. Copy available assets and skip only dangling
+ * links so source builds remain verifiable on machines without the media.
+ */
+function copyAvailablePublicDir() {
+  function copyTree(source, destination, skipped) {
+    fs.mkdirSync(destination, { recursive: true });
+    for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+      const from = path.join(source, entry.name);
+      const to = path.join(destination, entry.name);
+      let stats;
+      try {
+        stats = fs.statSync(from);
+      } catch (error) {
+        if (error.code === 'ENOENT' && entry.isSymbolicLink()) {
+          skipped.push(path.relative(process.cwd(), from));
+          continue;
+        }
+        throw error;
+      }
+      if (stats.isDirectory()) {
+        copyTree(from, to, skipped);
+      } else if (stats.isFile()) {
+        fs.copyFileSync(from, to);
+      }
+    }
+  }
+
+  return {
+    name: 'copy-available-public-dir',
+    apply: 'build',
+    writeBundle(options) {
+      const source = path.resolve(process.cwd(), 'public');
+      const destination = path.resolve(process.cwd(), options.dir || 'dist');
+      const skipped = [];
+      copyTree(source, destination, skipped);
+      if (skipped.length) {
+        console.warn(
+          `[copy-available-public-dir] skipped ${skipped.length} dangling media links`,
+        );
+      }
+    },
+  };
+}
+
+/**
  * Tiny dev-server API for live-saving human verdicts.
  *   GET  /api/human-verdicts  → returns JSON object (or {} if file missing)
  *   POST /api/human-verdicts  → overwrites the file with the request body
@@ -142,7 +188,16 @@ function trialsApi() {
 }
 
 export default defineConfig({
-  plugins: [react(), humanVerdictsApi(), changeLogApi(), trialsApi()],
+  plugins: [
+    react(),
+    humanVerdictsApi(),
+    changeLogApi(),
+    trialsApi(),
+    copyAvailablePublicDir(),
+  ],
+  build: {
+    copyPublicDir: false,
+  },
   server: {
     host: '0.0.0.0',
     port: 3333,

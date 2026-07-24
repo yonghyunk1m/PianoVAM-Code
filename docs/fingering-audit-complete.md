@@ -1,0 +1,619 @@
+# PianoVAM Fingering Audit: Complete Research and Implementation Record
+
+**Study date:** 2026-07-23  
+**Consolidated:** 2026-07-24  
+**Run ID:** `20260723T122049Z-publication-audit-746e73d5`  
+**Status:** computational study complete; publication recommendation gate closed
+
+## 1. Executive summary
+
+This study built and ran an unattended, evidence-governed audit of PianoVAM
+fingering labels. It compared blacklist, whitelist, and hybrid strategies on
+the complete local dataset while treating:
+
+- the 1,800 human labels in 11 recordings as authoritative error ground truth;
+- PIG v1.02 as the authoritative negative control for fingering validity; and
+- the complete 508,621-note PianoVAM corpus as the workload population.
+
+The approximately 30,000-note review target was deliberately treated as a soft
+target. Thresholds were not adjusted merely to reach that number.
+
+The main conclusions are:
+
+1. No evaluated set is currently defensible as a final publication filter.
+2. The closest set to 30,000 notes selects 31,066 notes but recalls only 4.08%
+   of all authoritative errors (95% recording-clustered interval:
+   1.68%–6.71%).
+3. The corpus contains 74,248 notes without any hand/finger label. These
+   account for 275 of the 392 ground-truth errors.
+4. Filtering is strongly nonuniform by finger. In the 31,066-note set, the
+   selected workload ranges from 1.70% of `R1` notes to 20.52% of `L4` notes.
+5. PIG v1.02 is not present locally and its official page does not provide a
+   checksum-verifiable unattended download. No set is therefore marked
+   recommendable, and no Vite review queue was exported.
+
+The correct next scientific step is not to tune a cutoff toward 30,000. It is
+to obtain the authoritative PIG annotations, validate the applicable rules,
+and address or impute the 74,248 missing labels under a separately validated
+procedure.
+
+## 2. Objective
+
+The goal is to prioritize PianoVAM fingering labels for human review before
+publication while minimizing review workload without sacrificing validity.
+
+The study evaluates:
+
+- **blacklisting:** selecting notes because risk conditions hold;
+- **whitelisting:** removing notes from review only when sufficient reliability
+  conditions hold; and
+- **hybrid filtering:** combining direct risks, strict safe conditions, and
+  corroboration between independent evidence families.
+
+Scientific defensibility and error capture take priority over reaching an
+arbitrary queue size.
+
+## 3. Existing system and data
+
+### 3.1 Repository components
+
+| Component | Role |
+|---|---|
+| `PianoVAM_v1.0/Fingering/` | 105 source TSV files |
+| `FingeringDetection/detection/fingergt.py` | 1,800 authoritative labels |
+| `FingeringInterpolation/` | PIG-trained second-order HMM and model files |
+| `ManualCheck/hard_part_selector.py` | seven legacy hard-note rules |
+| `annotate/` | React/Vite fingering-correction application |
+| `fingering_audit/` | automated research and reporting pipeline |
+
+### 3.2 Audit populations
+
+| Population | Count | Purpose |
+|---|---:|---|
+| Full PianoVAM notes | 508,621 | workload and hard-note percentage |
+| Assigned hand/finger labels | 434,373 | assigned-fingering audit |
+| Missing hand/finger labels | 74,248 | mandatory data-repair population |
+| Authoritative GT labels | 1,800 | error evaluation |
+| GT recordings | 11 | grouped validation and uncertainty |
+| GT exact errors | 392 | target errors |
+| GT errors caused by missing prediction | 275 | data-completeness failures |
+| GT errors among assigned predictions | 117 | assigned-label errors |
+
+The source TSV files are immutable inputs. The pipeline writes generated
+tables under `artifacts/fingering_audit/<run-id>/`.
+
+## 4. Terminology and validity rules
+
+### 4.1 Invalidity rule
+
+An invalidity rule claims that a fingering is physically or logically
+impossible. Every such rule must trigger on zero PIG annotations before it can
+appear in a recommended set.
+
+### 4.2 Risk signal
+
+A risk signal means that a detector may be wrong or that a passage may be
+difficult. It does not establish that the fingering is invalid.
+
+### 4.3 Hard-note percentage
+
+The hard-note percentage is:
+
+```text
+selected audit notes / all 508,621 PianoVAM notes
+```
+
+It is measured before adding display-only context notes.
+
+### 4.4 PIG policy
+
+PIG fingerings may be rare, difficult, performer-specific, signed, or
+compound. They remain authoritative examples of valid fingerings.
+
+PIG can disprove an invalidity claim. It cannot validate a
+video- or detector-specific signal because it does not contain matching
+PianoVAM video evidence.
+
+Risk rules return `not_applicable` under a PIG invalidity check rather than a
+fabricated zero.
+
+## 5. Evidence policy
+
+Every threshold is assigned one of four grades:
+
+1. **Physical invariant:** a schema or physical condition that is unambiguous.
+2. **Research-supported:** derived from a primary source with its scope and
+   assumptions retained.
+3. **Empirically calibrated:** selected using training recordings only inside
+   leave-one-recording-out evaluation.
+4. **Exploratory:** plausible but insufficiently supported; it cannot select
+   notes alone in a recommended set.
+
+The study applies these safeguards:
+
+- never choose a threshold merely to obtain 30,000 notes;
+- keep research-derived and empirically calibrated values distinguishable;
+- use pair-specific ergonomic spans instead of one global span;
+- condition large leaps on available movement time;
+- require corroboration for weak musical-context signals;
+- retain missingness explicitly rather than treating unavailable evidence as
+  confidence; and
+- preserve complete PIG annotation semantics when PIG is available.
+
+## 6. Threshold decisions
+
+### 6.1 Finger-pair span thresholds
+
+Parncutt et al. (1997), Table 1, gives directed semitone limits for ten finger
+pairs. The source model concerns consecutive right-hand melodic fragments
+under legato, moderately loud, approximately isochronous conditions. It does
+not model articulation, performer hand size, two-hand interaction, or free
+repositioning time.
+
+| Pair | MinPrac | MinComf | MinRel | MaxRel | MaxComf | MaxPrac |
+|---|---:|---:|---:|---:|---:|---:|
+| 1–2 | -5 | -3 | 1 | 5 | 8 | 10 |
+| 1–3 | -4 | -2 | 3 | 7 | 10 | 12 |
+| 1–4 | -3 | -1 | 5 | 9 | 12 | 14 |
+| 1–5 | -1 | 1 | 7 | 10 | 13 | 15 |
+| 2–3 | 1 | 1 | 1 | 2 | 3 | 5 |
+| 2–4 | 1 | 1 | 3 | 4 | 5 | 7 |
+| 2–5 | 2 | 2 | 5 | 6 | 8 | 10 |
+| 3–4 | 1 | 1 | 1 | 2 | 2 | 4 |
+| 3–5 | 1 | 1 | 3 | 4 | 5 | 7 |
+| 4–5 | 1 | 1 | 1 | 2 | 3 | 5 |
+
+The variants are:
+
+- **conservative:** outside `MinPrac..MaxPrac`;
+- **central:** outside `MinComf..MaxComf`;
+- **sensitive:** outside `MinRel..MaxRel`.
+
+All three are risk signals, not declarations of impossibility. The left-hand
+application mirrors the pitch axis and is explicitly an extrapolation.
+
+### 6.2 Non-thumb crossings
+
+The ergonomic literature describes most non-thumb crossings as impractical
+but also recognizes legitimate historical and virtuoso exceptions. Therefore:
+
+- crossing is a risk signal, never invalidity;
+- it cannot independently support a final recommended set; and
+- the legacy 500 ms cutoff is not treated as research-backed.
+
+### 6.3 Time-conditioned position changes
+
+No reviewed primary source gives a universal piano-video error threshold that
+jointly combines pitch displacement and movement time. The pipeline therefore
+calibrates upper-tail position-change rates within each training fold:
+
+| Variant | Training-fold tail |
+|---|---:|
+| Conservative | 99.5th percentile |
+| Central | 99th percentile |
+| Sensitive | 97.5th percentile |
+
+The held-out recording never contributes to its threshold.
+
+### 6.4 Detector and trajectory values
+
+HaMeR and MediaPipe Hands establish useful hand reconstruction and tracking
+methods, but neither publication establishes a universal piano-fingering
+cutoff for:
+
+- top candidate score;
+- top-two margin;
+- missing-frame duration;
+- landmark velocity, acceleration, or jerk;
+- key-boundary distance; or
+- trajectory discontinuity.
+
+The legacy support levels 0.50 and 0.80 are implementation-native baselines,
+not published piano error thresholds. When corresponding authoritative
+features become available, they must be calibrated inside the training folds.
+
+### 6.5 HMM disagreement
+
+The PIG-trained second-order HMM is an independent fingering estimator.
+Detector/HMM disagreement is a risk signal, not proof that either label is
+correct. Human fingering varies, and published sequence models have known
+limitations involving phrase boundaries and interdependence between hands.
+
+### 6.6 Legacy thresholds
+
+| Legacy value | Final treatment | Reason |
+|---|---|---|
+| crossing within 500 ms | exploratory baseline | no universal timing boundary; valid exceptions exist |
+| leap ≥15 semitones within 180 ms | exploratory baseline | pitch distance alone is insufficient |
+| hand overlap within 200 ms | exploratory baseline | no primary piano-error cutoff |
+| ≥3 consecutive `Noinfo` | exploratory baseline | missingness is relevant; cluster length is arbitrary |
+| alternation IOI ≤120 ms | exploratory baseline | no universal error threshold |
+| support <0.50 or <0.80 | legacy baseline | detector-native tier, not external evidence |
+
+## 7. Automated workflow
+
+Run:
+
+```bash
+./run_fingering_audit.sh --run-label publication-audit
+```
+
+The wrapper discovers a Python environment containing the required packages
+and invokes:
+
+```bash
+python -m fingering_audit run \
+  --config fingering_audit/config/research.yaml
+```
+
+Pipeline stages:
+
+1. validate the configuration and evidence ledger;
+2. discover PIG in configured roots;
+3. load and canonicalize all PianoVAM notes;
+4. attach all 1,800 authoritative labels;
+5. extract vectorized musical and ergonomic features;
+6. run the existing PIG-trained HMM independently;
+7. compute fixed and fold-calibrated rule masks;
+8. evaluate blacklist, whitelist, hybrid, integrity, and legacy sets;
+9. generate overall, per-recording, per-error-type, and per-finger metrics;
+10. compute 2,000 recording-cluster bootstrap replicates per filter set;
+11. write tables, plots, manifests, and reconciliation checks; and
+12. write `SUCCESS.json` only if mandatory gates pass.
+
+When PIG is unavailable, the computational run completes but writes
+`RECOMMENDATION_GATE_CLOSED.json` instead of `SUCCESS.json`.
+
+## 8. Evaluation methodology
+
+### 8.1 Error semantics
+
+- A missing prediction is an exact error and a hand error.
+- A wrong hand is a hand error but not a within-hand finger error.
+- A wrong finger with the correct hand is a within-hand finger error.
+
+### 8.2 Core metrics
+
+```text
+error recall       = selected errors / all errors
+precision          = selected errors / selected notes
+correct sieve rate = selected correct notes / all correct notes
+enrichment         = precision / overall error prevalence
+```
+
+### 8.3 Grouped validation
+
+Every empirical threshold uses leave-one-recording-out evaluation. The held-out
+recording does not participate in threshold fitting.
+
+Uncertainty intervals resample the 11 recordings with replacement rather than
+resampling neighboring notes as if they were independent.
+
+### 8.4 Per-finger reporting
+
+Ground-truth performance is grouped by the true finger `L1`–`L5` and
+`R1`–`R5`. Full-corpus workload is grouped by the predicted finger, with
+missing predictions reported separately.
+
+## 9. Ground-truth error distribution by finger
+
+| Finger | GT notes | Exact errors | Error rate |
+|---|---:|---:|---:|
+| L1 | 252 | 45 | 17.86% |
+| L2 | 207 | 25 | 12.08% |
+| L3 | 110 | 20 | 18.18% |
+| L4 | 38 | 13 | 34.21% |
+| L5 | 279 | 72 | 25.81% |
+| R1 | 252 | 71 | 28.17% |
+| R2 | 193 | 19 | 9.84% |
+| R3 | 160 | 21 | 13.12% |
+| R4 | 136 | 40 | 29.41% |
+| R5 | 173 | 66 | 38.15% |
+| **Total** | **1,800** | **392** | **21.78%** |
+
+The error distribution is plainly nonuniform. `R5` and `L4` have the highest
+observed error rates, whereas `R2` and `L2` have the lowest.
+
+## 10. Complete filter-set results
+
+All percentages use the 508,621-note corpus denominator. `GT recall` includes
+missing predictions; `assigned recall` conditions on notes that already have a
+predicted hand and finger.
+
+| Strategy | Filter set | Hard notes | Hard % | GT recall | Precision | Assigned recall |
+|---|---|---:|---:|---:|---:|---:|
+| Blacklist | `bl_step_crossing` | 3,631 | 0.71% | 0.77% | 30.00% | 2.56% |
+| Blacklist | `bl_rate_q995` | 4,745 | 0.93% | 0.51% | 25.00% | 1.71% |
+| Blacklist | `bl_rate_q990` | 6,351 | 1.25% | 1.02% | 23.53% | 3.42% |
+| Blacklist | `bl_crossing` | 9,707 | 1.91% | 1.79% | 25.00% | 5.98% |
+| Blacklist | `bl_rate_q975` | 14,655 | 2.88% | 1.53% | 14.29% | 5.13% |
+| Blacklist | `bl_two_signal_strict` | 31,066 | 6.11% | 4.08% | 17.78% | 13.68% |
+| Blacklist | `bl_span_practical` | 39,443 | 7.75% | 3.32% | 9.92% | 11.11% |
+| Blacklist | `bl_practical_or_crossing` | 39,443 | 7.75% | 3.32% | 9.92% | 11.11% |
+| Hybrid | `hy_direct_plus_corroborated` | 41,928 | 8.24% | 4.08% | 11.51% | 13.68% |
+| Blacklist | `bl_practical_or_rate995` | 44,172 | 8.68% | 3.83% | 10.79% | 12.82% |
+| Hybrid | `hy_two_of_three_families` | 49,748 | 9.78% | 6.12% | 14.20% | 20.51% |
+| Legacy | `legacy_current_default` | 56,271 | 11.06% | 7.91% | 21.99% | 26.50% |
+| Hybrid | `hy_hierarchical` | 62,225 | 12.23% | 5.87% | 10.36% | 19.66% |
+| Blacklist | `bl_span_comfortable` | 69,306 | 13.63% | 5.61% | 9.44% | 18.80% |
+| Integrity | `mandatory_missing` | 74,248 | 14.60% | 70.15% | 100.00% | 0.00% |
+| Blacklist | `bl_span_relative` | 182,738 | 35.93% | 15.31% | 9.62% | 51.28% |
+| Blacklist | `bl_hmm_disagreement` | 279,540 | 54.96% | 24.23% | 9.42% | 81.20% |
+| Whitelist | `wl_model_agreement` | 279,540 | 54.96% | 24.23% | 9.42% | 81.20% |
+| Whitelist | `wl_strict_obvious` | 351,748 | 69.16% | 27.81% | 8.80% | 93.16% |
+
+No result is marked recommendable while the PIG gate is unavailable.
+
+## 11. Detailed analysis of the nearest-to-30k set
+
+`bl_two_signal_strict` requires at least two of four risk signals:
+
+- practical-span violation;
+- non-thumb crossing;
+- central time-conditioned position-change tail; and
+- HMM disagreement.
+
+It selects 31,066 notes (6.11%) but captures only 16 of the 392 authoritative
+errors:
+
+| Metric | Result |
+|---|---:|
+| All-GT exact-error recall | 4.08% |
+| 95% recording-clustered interval | 1.68%–6.71% |
+| Assigned-label error recall | 13.68% |
+| GT precision | 17.78% |
+
+This filter is close to the requested workload only numerically. Its error
+capture is too low and too uneven for publication use.
+
+### 11.1 Per-finger GT performance
+
+| Finger | Errors | Selected errors | Recall |
+|---|---:|---:|---:|
+| L1 | 45 | 0 | 0.00% |
+| L2 | 25 | 0 | 0.00% |
+| L3 | 20 | 0 | 0.00% |
+| L4 | 13 | 0 | 0.00% |
+| L5 | 72 | 7 | 9.72% |
+| R1 | 71 | 0 | 0.00% |
+| R2 | 19 | 1 | 5.26% |
+| R3 | 21 | 1 | 4.76% |
+| R4 | 40 | 0 | 0.00% |
+| R5 | 66 | 7 | 10.61% |
+
+Six of the ten fingers have zero captured authoritative errors.
+
+### 11.2 Workload by predicted finger
+
+| Predicted finger | Eligible notes | Hard notes | Selected % |
+|---|---:|---:|---:|
+| L1 | 56,961 | 1,701 | 2.99% |
+| L2 | 42,151 | 3,620 | 8.59% |
+| L3 | 32,568 | 4,035 | 12.39% |
+| L4 | 17,383 | 3,567 | 20.52% |
+| L5 | 41,112 | 4,544 | 11.05% |
+| R1 | 65,498 | 1,113 | 1.70% |
+| R2 | 58,395 | 2,733 | 4.68% |
+| R3 | 48,125 | 3,602 | 7.48% |
+| R4 | 31,856 | 3,341 | 10.49% |
+| R5 | 40,324 | 2,810 | 6.97% |
+
+The 12-fold difference between `R1` and `L4` confirms that aggregate workload
+alone is misleading.
+
+## 12. Missing labels and the workload constraint
+
+The 74,248 missing predictions form a separate integrity problem:
+
+- they are 14.60% of the corpus;
+- they account for 275 of 392 GT errors (70.15%); and
+- they already exceed the entire 30,000-note target.
+
+Combining the missing-label queue with the nearest 31,066-note assigned-label
+set would require 105,314 reviews before display context. It would capture 291
+of 392 GT errors (74.23%) under the current GT sample, but the workload would
+be far above the target.
+
+An HMM or another model may propose labels for missing entries, but those
+generated labels require their own held-out validation and uncertainty policy.
+They cannot be treated as automatically correct merely to reduce manual work.
+
+## 13. Available and unavailable evidence
+
+### Available
+
+- complete 508,621-note fingering TSV corpus;
+- all 1,800 local authoritative labels;
+- PIG-trained HMM model files;
+- musical timing, pitch, hand, and predicted-finger context;
+- vectorized ergonomic relations; and
+- legacy rule outputs.
+
+### Unavailable in the completed run
+
+| Evidence | Status | Consequence |
+|---|---|---|
+| PIG v1.02 annotation files | not present locally | recommendation gate closed |
+| HaMeR note-level trajectories and candidate margins | not found | trajectory-dependent sets excluded |
+| MediaPipe per-frame confidence aligned to notes | not found | confidence-dependent sets excluded |
+
+The official PIG page supplies the dataset upon request and does not expose a
+direct archive with a recorded checksum. The runner refuses to substitute an
+unofficial mirror.
+
+## 14. Recommendation status
+
+No final filter is recommended.
+
+This is a substantive research result, not merely a software blocker:
+
+- the nearest-to-30k candidate has inadequate recall;
+- span-only filters are weak error detectors despite their stronger ergonomic
+  justification;
+- strict whitelisting removes too few notes to meet the workload target;
+- missing predictions dominate the observed error count; and
+- PIG validation is unavailable.
+
+A candidate may only become a recommendation after:
+
+1. a complete authoritative PIG copy is discovered;
+2. all applicable invalidity rules record zero PIG violations;
+3. all feature-dependent denominators are explicit;
+4. out-of-fold performance is acceptable overall and for every finger;
+5. count, percentage, and exported note IDs reconcile; and
+6. the selected queue is exported to Vite without modifying source TSVs or
+   existing human verdicts.
+
+## 15. Implementation architecture
+
+```text
+fingering_audit/
+├── __main__.py            command-line interface
+├── config.py              strict configuration and path discovery
+├── contracts.py           immutable shared records and enums
+├── manifest.py            hashes, stage records, and terminal markers
+├── acquire.py             fail-closed PIG discovery
+├── canonical.py           PianoVAM, GT, and PIG canonical tables
+├── evidence.py            evidence validation and PIG gate
+├── study.py               full experiment construction and summaries
+├── pipeline.py            unattended stage orchestration
+├── report.py              tables, report, figures, and verification
+├── features/
+│   ├── context.py         timing, pitch, density, chord, and sequence features
+│   ├── ergonomic.py       finger-pair and crossing relations
+│   └── model.py           vectorized HMM and disagreement features
+├── filters/
+│   └── strategies.py      blacklist, whitelist, and hybrid semantics
+├── evaluation/
+│   ├── labels.py          exact, hand, and within-hand error labels
+│   ├── metrics.py         pooled and per-finger metrics
+│   └── bootstrap.py       recording-cluster uncertainty intervals
+├── config/research.yaml
+└── evidence/
+    ├── thresholds.yaml
+    └── sources.bib
+```
+
+The pipeline stores:
+
+```text
+artifacts/fingering_audit/<run-id>/
+├── manifest.json
+├── pig_status.json
+├── RECOMMENDATION_GATE_CLOSED.json or SUCCESS.json
+├── data/
+│   ├── canonical_notes.parquet
+│   ├── ground_truth_labels.parquet
+│   ├── features.parquet
+│   └── selection_masks.parquet
+├── results/
+│   ├── filter_sets.csv
+│   ├── individual_filters.csv
+│   ├── per_finger.csv
+│   ├── workload_per_finger.csv
+│   ├── per_recording.csv
+│   ├── error_types.csv
+│   ├── overlap_matrix.csv
+│   ├── threshold_sensitivity.csv
+│   ├── excluded_rules.csv
+│   ├── pareto_tiers.csv
+│   └── all_results.parquet
+└── report/
+    ├── research_report.md
+    ├── research_report.html
+    └── figures/
+```
+
+Generated artifacts are intentionally ignored by Git.
+
+## 16. Vite correction application
+
+The existing React/Vite application remains the review interface.
+
+The production build originally failed because Vite followed 212 generated
+audio/video symlinks whose external dataset targets were not mounted. The
+build now:
+
+- disables Vite's unconditional public-directory copier;
+- copies every available public asset; and
+- skips only dangling generated media links.
+
+Development-time paths and source data are unchanged. No candidate review
+queue is exported while the recommendation gate is closed.
+
+Build verification:
+
+```bash
+npm --prefix annotate run build
+```
+
+## 17. Reproducibility and verification
+
+Preflight:
+
+```bash
+python -m fingering_audit preflight \
+  --config fingering_audit/config/research.yaml
+```
+
+Full study:
+
+```bash
+./run_fingering_audit.sh --run-label publication-audit
+```
+
+Verify a run:
+
+```bash
+python -m fingering_audit report \
+  --run-dir artifacts/fingering_audit/<run-id> \
+  --verify-only
+```
+
+Final verification evidence:
+
+- 35 Python tests passed;
+- all 508,621 notes were present;
+- all 1,800 GT labels were present;
+- every one of `L1`–`L5` and `R1`–`R5` was reported;
+- all 19 filter counts matched their persisted masks;
+- all required report files were present;
+- no source fingering TSV was modified; and
+- the Vite production build succeeded while explicitly skipping 212 dangling
+  media links.
+
+## 18. Primary sources
+
+1. Parncutt, R., Sloboda, J. A., Clarke, E. F., Raekallio, M., & Desain, P.
+   (1997). *An Ergonomic Model of Keyboard Fingering for Melodic Fragments*.
+   Music Perception, 14(4), 341–382.
+   DOI: [10.2307/40285730](https://doi.org/10.2307/40285730).
+2. Nakamura, E., Saito, Y., & Yoshii, K. (2020). *Statistical Learning and
+   Estimation of Piano Fingering*. Information Sciences, 517, 68–85.
+   DOI: [10.1016/j.ins.2019.12.068](https://doi.org/10.1016/j.ins.2019.12.068).
+3. Pavlakos, G., Shan, D., Radosavovic, I., Kanazawa, A., Fouhey, D., &
+   Malik, J. (2024). *Reconstructing Hands in 3D with Transformers*.
+   CVPR 2024, 9826–9836.
+   [CVF paper](https://openaccess.thecvf.com/content/CVPR2024/html/Pavlakos_Reconstructing_Hands_in_3D_with_Transformers_CVPR_2024_paper.html).
+4. Zhang, F., Bazarevsky, V., Vakunov, A., Tkachenka, A., Sung, G.,
+   Chang, C.-L., & Grundmann, M. (2020). *MediaPipe Hands: On-device
+   Real-time Hand Tracking*. [arXiv:2006.10214](https://arxiv.org/abs/2006.10214).
+5. Bates, S., Angelopoulos, A., Lei, L., Malik, J., & Jordan, M. I. (2021).
+   *Distribution-Free, Risk-Controlling Prediction Sets*. Journal of the ACM,
+   68(6). DOI: [10.1145/3478535](https://doi.org/10.1145/3478535).
+6. Saito, Y., & Nakamura, E. *PIG: Piano Fingering Dataset v1.02*.
+   [Official dataset page](https://beam.kisarazu.ac.jp/~saito/research/PianoFingeringDataset/).
+
+## 19. Final decision
+
+The study does not support a defensible approximately 30,000-note publication
+audit queue from the currently available evidence.
+
+The 31,066-note candidate is rejected because of low and nonuniform error
+recall. The 39,443-note practical-span candidate is more directly grounded in
+published ergonomic research but performs even worse as an error detector.
+The legacy set is larger and still recalls only 7.91% of all GT errors.
+
+Publication should wait until missing labels and the PIG gate are resolved.
+Any later recommendation must be selected from validity-gated, out-of-fold
+results rather than by moving thresholds toward a desired queue size.

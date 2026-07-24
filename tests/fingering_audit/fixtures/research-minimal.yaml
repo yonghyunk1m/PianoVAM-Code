@@ -1,0 +1,14 @@
+schema_version: 1
+noninteractive: true
+random_seed: 20260723
+repository_root: ../../..
+pianovam_fingering_dir: tests/fingering_audit/fixtures/pianovam
+ground_truth_module: tests/fingering_audit/fixtures/gt_fixture.py
+pig_search_roots:
+  - tests/fingering_audit/fixtures/PIG
+detector_search_roots: []
+artifact_root: artifacts/fingering_audit
+target_budgets: [10000, 20000, 30000, 50000]
+overwrite_sources: false
+materialize_missing_detector_outputs: false
+strict_recommendation_gate: true

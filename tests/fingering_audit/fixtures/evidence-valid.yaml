@@ -1,0 +1,44 @@
+schema_version: 1
+sources_bib: sources-valid.bib
+pig:
+  official_page: https://beam.kisarazu.ac.jp/~saito/research/PianoFingeringDataset/
+  acquisition: upon_request
+rules:
+  - rule_id: fixture_time_conditioned_leap
+    kind: risk
+    feature: time_conditioned_leap
+    unit: semitones_and_milliseconds
+    operator: joint_condition
+    evidence_grade: research_supported
+    source_keys: [fixture_primary_source]
+    applicability: sequential_same_hand_notes
+    may_select_alone: true
+    implementation_version: 1
+    sensitivity_variants:
+      conservative: {semitones_gte: 24, milliseconds_lte: 80}
+      central: {semitones_gte: 20, milliseconds_lte: 100}
+      permissive: {semitones_gte: 16, milliseconds_lte: 120}
+  - rule_id: fixture_same_finger_overlap
+    kind: invalidity
+    feature: simultaneous_same_finger_different_pitch
+    unit: boolean
+    operator: is_true
+    evidence_grade: physical_invariant
+    source_keys: [fixture_primary_source]
+    applicability: overlapping_same_hand_notes
+    may_select_alone: true
+    implementation_version: 1
+    sensitivity_variants:
+      exact: {value: true}
+  - rule_id: fixture_detector_curiosity
+    kind: risk
+    feature: detector_curiosity
+    unit: score
+    operator: less_than
+    evidence_grade: exploratory
+    source_keys: [fixture_primary_source]
+    applicability: notes_with_detector_output
+    may_select_alone: false
+    implementation_version: 1
+    sensitivity_variants:
+      report_only: {value: 0.5}
