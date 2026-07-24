@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,14 +11,17 @@ from ManualCheck.hard_part_selector import (
     select_hard_parts,
 )
 from fingering_audit.canonical import load_pianovam_notes
+from fingering_audit.contracts import AuditConfig
 from fingering_audit.features.audit_flags import compute_audit_flags
 from fingering_audit.study import (
     NOINFO_VARIANTS,
     StudyData,
     _combined_sets,
     _legacy_default_mask,
+    _musical_input_mask,
     _oof_noinfo_tail,
     _valid_assignment,
+    build_study,
     summarize_study,
 )
 
@@ -25,6 +30,49 @@ CALIBRATED_VARIANTS = {
     for window in (5, 9, 17)
     for quantile in (995, 990, 975)
 }
+
+
+@pytest.fixture
+def noinfo_jump_study(tmp_path):
+    source = tmp_path / "pianovam"
+    source.mkdir()
+    source_path = source / "jump.tsv"
+    source_path.write_text(
+        "onset\tkey_offset\tnote\thand\tfinger\tvelocity\n"
+        "0.0\t0.05\t60\tR\t1\t80\n"
+        "0.1\t0.15\t100\tR\tNoinfo\t80\n"
+        "0.2\t0.25\t62\tR\t5\t80\n",
+        encoding="utf-8",
+    )
+    ground_truth = tmp_path / "gt.py"
+    ground_truth.write_text(
+        "GT_MAP = {'jump': [('R', 1), ('R', 3), ('R', 5)]}\n",
+        encoding="utf-8",
+    )
+    config = AuditConfig(
+        schema_version=1,
+        noninteractive=True,
+        random_seed=7,
+        repository_root=Path.cwd(),
+        pianovam_fingering_dir=source,
+        ground_truth_module=ground_truth,
+        pig_search_roots=(),
+        detector_search_roots=(),
+        artifact_root=tmp_path / "artifacts",
+        target_budgets=(),
+        overwrite_sources=False,
+        materialize_missing_detector_outputs=False,
+        strict_recommendation_gate=True,
+    )
+    expected = select_hard_parts(
+        load_fingering_tsv(source_path),
+        enabled_rules=[
+            "impossible_fingering",
+            "fast_jump",
+            "noinfo_cluster",
+        ],
+    )
+    return build_study(config), expected
 
 
 @pytest.fixture
@@ -183,10 +231,40 @@ def test_legacy_default_preserves_original_noinfo_cluster_context(tmp_path):
         ],
     )["is_hard"]
 
-    actual = _legacy_default_mask(notes, eligible)
+    actual = _legacy_default_mask(notes, _musical_input_mask(notes)) & eligible
 
     assert expected.tolist() == [True, True, False, False, False, True, True]
     assert actual.tolist() == expected.tolist()
+
+
+def test_legacy_default_keeps_hand_known_noinfo_in_fast_jump_sequence(
+    noinfo_jump_study,
+):
+    study, original = noinfo_jump_study
+    actual = study.selections_full["legacy_current_default"]
+
+    assert original["is_hard"].tolist() == [True, True, True]
+    assert actual.iloc[[0, 2]].tolist() == [True, True]
+
+
+def test_musical_context_keeps_hand_known_noinfo_pitch_and_timing(
+    noinfo_jump_study,
+):
+    study, _ = noinfo_jump_study
+
+    assert study.features.loc[2, "absolute_pitch_change"] == 38
+    assert study.features.loc[2, "prev_ioi_ms"] == 100
+    legacy_fast_jump = (
+        study.features["absolute_pitch_change"].ge(15)
+        & study.features["prev_ioi_ms"].le(180)
+        & _valid_assignment(study.notes)
+        & ~study.queue_masks_full["data_integrity_must_resolve"]
+    ).fillna(False)
+    assert legacy_fast_jump.tolist() == [
+        False,
+        False,
+        True,
+    ]
 
 
 def test_standalone_noinfo_id_matches_sensitivity_union(study):

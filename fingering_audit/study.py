@@ -98,8 +98,19 @@ def _valid_assignment(frame: pd.DataFrame) -> pd.Series:
     )
 
 
+def _musical_input_mask(notes: pd.DataFrame) -> pd.Series:
+    pitch = pd.to_numeric(notes["pitch"], errors="coerce")
+    onset = pd.to_numeric(notes["onset_sec"], errors="coerce")
+    return (
+        pitch.between(0, 127).fillna(False)
+        & pitch.mod(1).eq(0).fillna(False)
+        & pd.Series(np.isfinite(pitch), index=notes.index)
+        & pd.Series(np.isfinite(onset), index=notes.index)
+    )
+
+
 def _legacy_default_mask(
-    notes: pd.DataFrame, eligible: pd.Series
+    notes: pd.DataFrame, musical_eligible: pd.Series
 ) -> pd.Series:
     selected = pd.Series(False, index=notes.index)
     for source_path, indices in notes.groupby(
@@ -112,7 +123,7 @@ def _legacy_default_mask(
         for column in ("onset", "key_offset", "note"):
             if column in frame:
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
-        invalid = ~eligible.iloc[positions].to_numpy(dtype=bool)
+        invalid = ~musical_eligible.iloc[positions].to_numpy(dtype=bool)
         frame.loc[invalid, "hand"] = "Noinfo"
         result = select_hard_parts(
             frame,
@@ -403,6 +414,7 @@ def _rule_masks(
     labels: pd.DataFrame,
     features: pd.DataFrame,
     integrity: pd.Series,
+    musical_eligible: pd.Series,
 ) -> tuple[dict[str, pd.Series], dict[str, pd.Series], pd.DataFrame]:
     full: dict[str, pd.Series] = {}
     gt: dict[str, pd.Series] = {}
@@ -424,7 +436,9 @@ def _rule_masks(
         & ~features["hmm_exact_disagreement"].fillna(False)
         & eligible
     )
-    full["legacy_default"] = _legacy_default_mask(notes, eligible) & eligible
+    full["legacy_default"] = (
+        _legacy_default_mask(notes, musical_eligible) & eligible
+    )
     full["legacy_fast_jump"] = (
         features["absolute_pitch_change"].ge(15)
         & features["prev_ioi_ms"].le(180)
@@ -626,7 +640,13 @@ def build_study(
     labels = label_errors(attach_ground_truth(notes, gt))
     physical_masks = _physical_candidate_masks(notes, physical_policy)
     integrity = physical_masks[2]
-    valid_notes = notes.loc[~integrity.to_numpy()].reset_index(drop=True)
+    musical_eligible = _musical_input_mask(notes)
+    valid_notes = notes.loc[
+        musical_eligible.to_numpy()
+    ].reset_index(drop=True).copy()
+    valid_assignment = _valid_assignment(valid_notes)
+    valid_notes.loc[~valid_assignment, "pred_finger"] = pd.NA
+    valid_notes.loc[~valid_assignment, "pred_finger_id"] = pd.NA
     features, hmm = _reindex_strict_features(
         notes,
         valid_notes,
@@ -636,9 +656,15 @@ def build_study(
             for hand in ("L", "R")
         },
     )
+    disagreement_notes = notes[
+        ["note_id", "pred_hand", "pred_finger"]
+    ].reset_index(drop=True).copy()
+    disagreement_notes.loc[
+        ~_valid_assignment(notes).to_numpy(), "pred_finger"
+    ] = pd.NA
     disagreement_input = pd.concat(
         [
-            notes[["note_id", "pred_hand", "pred_finger"]].reset_index(drop=True),
+            disagreement_notes,
             hmm.drop(columns=["note_id"]).reset_index(drop=True),
         ],
         axis=1,
@@ -655,7 +681,7 @@ def build_study(
         axis=1,
     )
     rule_full, rule_gt, thresholds = _rule_masks(
-        notes, labels, features, integrity
+        notes, labels, features, integrity, musical_eligible
     )
     queue_full, queue_gt, noinfo_sensitivity = _queue_masks(
         notes,

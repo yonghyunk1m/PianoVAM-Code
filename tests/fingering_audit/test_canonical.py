@@ -107,7 +107,7 @@ def test_loader_and_study_preserve_malformed_rows_as_integrity(tmp_path):
         True,
         False,
         False,
-        False,
+        True,
     ]
 
 
@@ -153,4 +153,6 @@ def test_fractional_finger_is_preserved_for_integrity_audit(tmp_path):
     assert study.queue_masks_full[
         "data_integrity_must_resolve"
     ].tolist() == [False, True]
-    assert study.features["hmm_feature_available"].tolist() == [True, False]
+    assert study.features["hmm_feature_available"].tolist() == [True, True]
+    assert pd.isna(study.features.loc[1, "finger_pair"])
+    assert not bool(study.features.loc[1, "hmm_disagreement_available"])
