@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -10,9 +11,15 @@ from ManualCheck.hard_part_selector import (
     load_fingering_tsv,
     select_hard_parts,
 )
-from fingering_audit.canonical import load_pianovam_notes
-from fingering_audit.contracts import AuditConfig
+from fingering_audit import report as report_module
+from fingering_audit import pipeline as pipeline_module
+from fingering_audit.canonical import load_pianovam_notes, load_pig_canonical
+from fingering_audit.config import load_config
+from fingering_audit.contracts import AuditConfig, PigValidation
 from fingering_audit.features.audit_flags import compute_audit_flags
+from fingering_audit.manifest import RunManifest
+from fingering_audit.physical_policy import derive_physical_policy
+from fingering_audit.report import REQUIRED_RESULTS
 from fingering_audit.study import (
     NOINFO_VARIANTS,
     StudyData,
@@ -30,6 +37,164 @@ CALIBRATED_VARIANTS = {
     for window in (5, 9, 17)
     for quantile in (995, 990, 975)
 }
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_required_results_include_queue_tables():
+    assert "noinfo_sensitivity.csv" in REQUIRED_RESULTS
+    assert "queue_summary.csv" in REQUIRED_RESULTS
+    assert "queue_workload_per_finger.csv" in REQUIRED_RESULTS
+
+
+def test_queue_report_columns_name_auditable_metrics():
+    assert getattr(report_module, "QUEUE_REPORT_COLUMNS", None) == [
+        "base_risk_method",
+        "physical_policy_status",
+        "noinfo_min_run",
+        "noinfo_context_radius",
+        "hard_count",
+        "hard_percentage_all_notes",
+        "gt_error_recall",
+        "assigned_gt_error_recall",
+        "gt_precision",
+        "error_enrichment",
+        "incremental_count_beyond_physical",
+        "incremental_errors_beyond_physical",
+    ]
+
+
+@pytest.mark.filterwarnings("ignore:All-NaN slice encountered:RuntimeWarning")
+def test_pig_present_run_persists_and_passes_validated_physical_policy(
+    tmp_path, monkeypatch
+):
+    config = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+    )
+    observed = {}
+    original_build = pipeline_module.build_study
+    original_gate = pipeline_module.enforce_recommendation_gate
+
+    def tracking_build(config, physical_policy=None):
+        observed["policy"] = physical_policy
+        return original_build(config, physical_policy=physical_policy)
+
+    def tracking_gate(validations, rule_ids):
+        observed["validated_rule_ids"] = tuple(rule_ids)
+        return original_gate(validations, observed["validated_rule_ids"])
+
+    monkeypatch.setattr(pipeline_module, "build_study", tracking_build)
+    monkeypatch.setattr(
+        pipeline_module, "enforce_recommendation_gate", tracking_gate
+    )
+
+    with pytest.raises(ValueError, match="reconciliation"):
+        pipeline_module.run_research(config, run_label="pig-present-fixture")
+
+    run_dir = next(tmp_path.iterdir())
+    policy = observed["policy"]
+    assert policy is not None
+    assert set(observed["validated_rule_ids"]) == set(policy.validations)
+    assert (run_dir / "data/physical_policy.yaml").is_file()
+    assert not (run_dir / "SUCCESS.json").exists()
+
+
+@pytest.mark.filterwarnings("ignore:All-NaN slice encountered:RuntimeWarning")
+def test_pig_absent_run_keeps_diagnostics_and_closes_success_gate(
+    tmp_path, monkeypatch
+):
+    config = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+        pig_search_roots=(),
+    )
+    observed = {}
+    original_build = pipeline_module.build_study
+
+    def tracking_build(config, physical_policy=None):
+        study = original_build(config, physical_policy=physical_policy)
+        observed["policy"] = physical_policy
+        observed["study"] = study
+        return study
+
+    monkeypatch.setattr(pipeline_module, "build_study", tracking_build)
+
+    with pytest.raises(ValueError, match="reconciliation"):
+        pipeline_module.run_research(config, run_label="pig-absent-fixture")
+
+    run_dir = next(tmp_path.iterdir())
+    assert observed["policy"] is None
+    assert (
+        "physical_candidate_diagnostic"
+        in observed["study"].queue_masks_full
+    )
+    assert not observed["study"].queue_masks_full["physical_must_alert"].any()
+    queue_masks = pd.read_parquet(run_dir / "data/queue_masks.parquet")
+    assert {
+        "physical_candidate_diagnostic",
+        "physical_must_alert",
+        "data_integrity_must_resolve",
+    } <= set(queue_masks)
+    assert (run_dir / "results/noinfo_sensitivity.csv").is_file()
+    assert (run_dir / "results/queue_summary.csv").is_file()
+    assert (run_dir / "results/queue_workload_per_finger.csv").is_file()
+    assert not (run_dir / "SUCCESS.json").exists()
+
+
+@pytest.mark.filterwarnings("ignore:All-NaN slice encountered:RuntimeWarning")
+def test_failed_physical_validation_emits_diagnostics_and_closes_gate(
+    tmp_path, monkeypatch
+):
+    config = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+    )
+    pig_root = FIXTURES / "PIG/PianoFingeringDataset_v1.02"
+    policy = derive_physical_policy(load_pig_canonical(pig_root), pig_root)
+    failed_rule = "simultaneous_pair_span"
+    failing_policy = replace(
+        policy,
+        enabled_rules=policy.enabled_rules - {failed_rule},
+        validations={
+            **policy.validations,
+            failed_rule: PigValidation(
+                rule_id=failed_rule,
+                status="fail",
+                violation_count=1,
+                violating_ids=("fixture-note",),
+            ),
+        },
+    )
+    observed = {}
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "derive_physical_policy",
+        lambda pig_notes, root: failing_policy,
+        raising=False,
+    )
+
+    def capture_closed(manifest, reason, reconciliations):
+        observed["reason"] = reason
+        observed["reconciliations"] = dict(reconciliations)
+
+    def reject_success(manifest, reconciliations):
+        pytest.fail("failed physical validation must not finalize SUCCESS")
+
+    monkeypatch.setattr(
+        RunManifest, "close_recommendation_gate", capture_closed
+    )
+    monkeypatch.setattr(RunManifest, "finalize", reject_success)
+
+    run_dir = pipeline_module.run_research(
+        config, run_label="pig-validation-failure"
+    )
+
+    assert failed_rule in observed["reason"]
+    assert (run_dir / "data/physical_policy.yaml").is_file()
+    assert (run_dir / "data/queue_masks.parquet").is_file()
+    assert (run_dir / "results/queue_summary.csv").is_file()
+    assert not (run_dir / "SUCCESS.json").exists()
 
 
 @pytest.fixture
@@ -203,6 +368,77 @@ def test_all_standalone_noinfo_variants_have_finger_outputs(study):
 
     assert expected <= set(tables["per_finger"]["set_id"])
     assert expected <= set(tables["workload_per_finger"]["set_id"])
+
+
+def test_written_queue_tables_reconcile_with_filter_and_finger_outputs(
+    study, tmp_path
+):
+    tables = summarize_study(study, "fixture", seed=7)
+    report_module.write_reports(
+        tmp_path,
+        tables,
+        corpus_notes=len(study.notes),
+        assigned_notes=int(study.notes["pred_finger_id"].notna().sum()),
+        missing_notes=int(study.notes["pred_finger_id"].isna().sum()),
+        pig_status="fixture",
+    )
+
+    results = tmp_path / "results"
+    queue_path = results / "queue_summary.csv"
+    workload_path = results / "queue_workload_per_finger.csv"
+    assert queue_path.is_file()
+    assert workload_path.is_file()
+
+    queue = pd.read_csv(queue_path)
+    workload = pd.read_csv(workload_path)
+    filters = pd.read_csv(results / "filter_sets.csv").set_index("set_id")
+    per_finger = pd.read_csv(results / "per_finger.csv")
+    expected_ids = {
+        set_id
+        for set_id in tables["filter_sets"]["set_id"]
+        if set_id.startswith("ni_") or "__ni_" in set_id
+    }
+    assert expected_ids == set(queue["set_id"])
+    assert expected_ids == set(workload["set_id"])
+    assert {
+        "set_id",
+        "noinfo_variant",
+        "noinfo_calibration",
+        "gt_hard_count",
+        *report_module.QUEUE_REPORT_COLUMNS,
+    } <= set(queue.columns)
+
+    queue_counts = queue.set_index("set_id")["hard_count"].astype(int)
+    assert queue_counts.to_dict() == (
+        filters.loc[queue_counts.index, "hard_count"].astype(int).to_dict()
+    )
+    assert queue_counts.to_dict() == (
+        workload.groupby("set_id")["hard_count"].sum().astype(int).to_dict()
+    )
+    all_gt = per_finger.query("scope == 'all_gt'")
+    assert queue.set_index("set_id")["gt_hard_count"].astype(int).to_dict() == (
+        all_gt.groupby("set_id")["selected_notes"]
+        .sum()
+        .loc[queue_counts.index]
+        .astype(int)
+        .to_dict()
+    )
+
+    combined = queue.query("set_id == 'base__ni_k2_r1'").iloc[0]
+    calibrated = queue.query("set_id == 'ni_w5_q995'").iloc[0]
+    assert combined["base_risk_method"] == "base"
+    assert combined["physical_policy_status"] == "fixture"
+    assert combined["noinfo_min_run"] == 2
+    assert combined["noinfo_context_radius"] == 1
+    assert calibrated["noinfo_variant"] == "ni_w5_q995"
+    assert calibrated["noinfo_calibration"] == "training_fold"
+
+    markdown = (tmp_path / "report/research_report.md").read_text(
+        encoding="utf-8"
+    )
+    assert "queue_summary.csv" in markdown
+    assert "queue_workload_per_finger.csv" in markdown
+    assert "per_finger.csv" in markdown
 
 
 def test_legacy_default_preserves_original_noinfo_cluster_context(tmp_path):

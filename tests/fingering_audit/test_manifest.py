@@ -40,3 +40,22 @@ def test_success_marker_requires_all_reconciliations(tmp_path):
     manifest.finalize({"counts_match": True, "pig_gate": True})
     payload = json.loads((manifest.run_dir / "SUCCESS.json").read_text())
     assert payload["status"] == "success"
+
+
+def test_failed_mandatory_reconciliation_cannot_finalize(tmp_path):
+    cfg = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+    )
+    manifest = RunManifest.start(cfg, run_id="mandatory-failure")
+
+    with pytest.raises(ValueError, match="mandatory"):
+        manifest.finalize(
+            {
+                "counts_match": True,
+                "pig_gate": True,
+                "mandatory_masks_contained": False,
+            }
+        )
+
+    assert not (manifest.run_dir / "SUCCESS.json").exists()

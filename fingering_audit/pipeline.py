@@ -11,14 +11,14 @@ import pandas as pd
 from .acquire import PigUnavailableError, ensure_pig
 from .canonical import load_pig_canonical
 from .contracts import AuditConfig
-from .contracts import RuleKind
 from .evidence import (
+    RecommendationGateError,
     enforce_recommendation_gate,
     load_evidence_ledger,
-    validate_pig,
 )
 from .evaluation.metrics import FINGER_IDS
 from .manifest import RunManifest, stage_key
+from .physical_policy import derive_physical_policy, write_physical_policy
 from .report import write_reports
 from .study import build_study, summarize_study
 
@@ -54,23 +54,31 @@ def run_research(
         )
 
         stage = "pig_gate"
+        physical_policy = None
+        pig_gate_open = False
         try:
             pig_root = ensure_pig(config)
             pig_notes = load_pig_canonical(pig_root)
-            invalidity_rules = [
-                rule for rule in ledger.rules.values() if rule.kind is RuleKind.INVALIDITY
-            ]
-            validations = {
-                rule.rule_id: validate_pig(rule, pig_notes)
-                for rule in invalidity_rules
-            }
-            enforce_recommendation_gate(validations, validations)
-            pig_status = (
-                f"passed: {len(pig_notes)} annotations across "
-                f"{pig_notes['piece_id'].nunique()} pieces and "
-                f"{pig_notes[['piece_id', 'performer_id']].drop_duplicates().shape[0]} "
-                f"performances; {len(validations)} invalidity rules passed"
+            physical_policy = derive_physical_policy(pig_notes, pig_root)
+            write_physical_policy(
+                physical_policy,
+                manifest.run_dir / "data/physical_policy.yaml",
             )
+            try:
+                enforce_recommendation_gate(
+                    physical_policy.validations,
+                    physical_policy.validations.keys(),
+                )
+                pig_gate_open = True
+                pig_status = (
+                    f"passed: {len(pig_notes)} annotations across "
+                    f"{pig_notes['piece_id'].nunique()} pieces and "
+                    f"{pig_notes[['piece_id', 'performer_id']].drop_duplicates().shape[0]} "
+                    f"performances; {len(physical_policy.validations)} "
+                    "physical-policy validations passed"
+                )
+            except RecommendationGateError as exc:
+                pig_status = f"failed: {exc}"
         except PigUnavailableError as exc:
             pig_root = None
             pig_notes = None
@@ -85,7 +93,7 @@ def run_research(
         )
 
         stage = "study"
-        study = build_study(config)
+        study = build_study(config, physical_policy=physical_policy)
         data_dir = manifest.run_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         if pig_notes is not None:
@@ -97,6 +105,14 @@ def run_research(
             {key: value.to_numpy(dtype=bool) for key, value in study.selections_full.items()}
         ).assign(note_id=study.notes["note_id"].to_numpy()).to_parquet(
             data_dir / "selection_masks.parquet", index=False
+        )
+        pd.DataFrame(
+            {
+                key: value.to_numpy(dtype=bool)
+                for key, value in study.queue_masks_full.items()
+            }
+        ).assign(note_id=study.notes["note_id"].to_numpy()).to_parquet(
+            data_dir / "queue_masks.parquet", index=False
         )
         manifest.complete_stage(
             "study",
@@ -124,6 +140,88 @@ def run_research(
             manifest.run_dir / "report/research_report.md",
         )
 
+        queue_variants = {}
+        for set_id in study.selections_full:
+            candidate = (
+                set_id.split("__", 1)[1] if "__" in set_id else set_id
+            )
+            if candidate in study.queue_masks_full and candidate.startswith(
+                "ni_"
+            ):
+                queue_variants[set_id] = candidate
+        mandatory_masks_contained = all(
+            (
+                (
+                    study.queue_masks_full["physical_must_alert"]
+                    <= study.selections_full[set_id]
+                ).all()
+                and (
+                    study.queue_masks_full[variant]
+                    <= study.selections_full[set_id]
+                ).all()
+                and (
+                    study.queue_masks_gt["physical_must_alert"]
+                    <= study.selections_gt[set_id]
+                ).all()
+                and (
+                    study.queue_masks_gt[variant]
+                    <= study.selections_gt[set_id]
+                ).all()
+            )
+            for set_id, variant in queue_variants.items()
+        )
+        integrity_disjoint_from_assigned = all(
+            (
+                not (
+                    study.queue_masks_full["data_integrity_must_resolve"]
+                    & study.selections_full[set_id]
+                ).any()
+                and not (
+                    study.queue_masks_gt["data_integrity_must_resolve"]
+                    & study.selections_gt[set_id]
+                ).any()
+            )
+            for set_id in queue_variants
+        )
+        queue_summary = pd.read_csv(
+            manifest.run_dir / "results/queue_summary.csv"
+        )
+        queue_workload = pd.read_csv(
+            manifest.run_dir / "results/queue_workload_per_finger.csv"
+        )
+        queue_ids = set(queue_variants)
+        filter_counts = (
+            tables["filter_sets"]
+            .set_index("set_id")
+            .loc[list(queue_ids), "hard_count"]
+            .astype(int)
+            .to_dict()
+        )
+        queue_counts = (
+            queue_summary.set_index("set_id")["hard_count"]
+            .astype(int)
+            .to_dict()
+        )
+        workload_counts = (
+            queue_workload.groupby("set_id")["hard_count"]
+            .sum()
+            .astype(int)
+            .to_dict()
+        )
+        all_gt_finger_counts = (
+            tables["per_finger"]
+            .loc[lambda frame: frame["scope"].eq("all_gt")]
+            .groupby("set_id")["selected_notes"]
+            .sum()
+            .loc[list(queue_ids)]
+            .astype(int)
+            .to_dict()
+        )
+        queue_gt_counts = (
+            queue_summary.set_index("set_id")["gt_hard_count"]
+            .astype(int)
+            .to_dict()
+        )
         reconciliations = {
             "all_1800_gt_labels_present": len(study.labels) == 1800,
             "all_508621_notes_present": len(study.notes) == 508621,
@@ -135,8 +233,26 @@ def run_research(
                 for row in tables["filter_sets"].itertuples()
             ),
             "report_files_present": all(path.is_file() for path in files),
+            "mandatory_masks_contained": (
+                bool(queue_variants) and mandatory_masks_contained
+            ),
+            "integrity_disjoint_from_assigned": (
+                bool(queue_variants) and integrity_disjoint_from_assigned
+            ),
+            "queue_summary_reconciles": (
+                queue_ids == set(queue_counts)
+                and queue_counts == filter_counts
+            ),
+            "queue_workload_reconciles": (
+                queue_ids == set(workload_counts)
+                and workload_counts == queue_counts
+            ),
+            "queue_per_finger_reconciles": (
+                queue_ids == set(queue_gt_counts)
+                and queue_gt_counts == all_gt_finger_counts
+            ),
         }
-        if pig_root is None:
+        if not pig_gate_open:
             manifest.close_recommendation_gate(pig_status, reconciliations)
         else:
             manifest.finalize(reconciliations)

@@ -22,7 +22,25 @@ REQUIRED_RESULTS = (
     "excluded_rules.csv",
     "pareto_tiers.csv",
     "all_results.parquet",
+    "noinfo_sensitivity.csv",
+    "queue_summary.csv",
+    "queue_workload_per_finger.csv",
 )
+
+QUEUE_REPORT_COLUMNS = [
+    "base_risk_method",
+    "physical_policy_status",
+    "noinfo_min_run",
+    "noinfo_context_radius",
+    "hard_count",
+    "hard_percentage_all_notes",
+    "gt_error_recall",
+    "assigned_gt_error_recall",
+    "gt_precision",
+    "error_enrichment",
+    "incremental_count_beyond_physical",
+    "incremental_errors_beyond_physical",
+]
 
 
 def _markdown_table(frame: pd.DataFrame, columns: list[str]) -> str:
@@ -41,6 +59,110 @@ def _markdown_table(frame: pd.DataFrame, columns: list[str]) -> str:
                 cells.append(str(value))
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
+
+
+def _queue_tables(
+    tables: Mapping[str, pd.DataFrame],
+    physical_policy_status: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    filter_sets = tables["filter_sets"]
+    sensitivity = tables["noinfo_sensitivity"].copy()
+    variants = set(sensitivity["variant"].dropna().astype(str))
+
+    def variant_for(set_id: str) -> str | None:
+        candidate = set_id.split("__", 1)[1] if "__" in set_id else set_id
+        return candidate if candidate in variants else None
+
+    queue = filter_sets.copy()
+    queue["noinfo_variant"] = queue["set_id"].astype(str).map(variant_for)
+    queue = queue.loc[queue["noinfo_variant"].notna()].copy()
+    queue["base_risk_method"] = queue["set_id"].astype(str).map(
+        lambda set_id: set_id.split("__", 1)[0] if "__" in set_id else pd.NA
+    )
+    queue["physical_policy_status"] = physical_policy_status
+
+    sensitivity = sensitivity.rename(
+        columns={
+            "variant": "noinfo_variant",
+            "calibration": "noinfo_calibration",
+            "min_run": "noinfo_min_run",
+            "radius": "noinfo_context_radius",
+            "window": "noinfo_window",
+            "quantile": "noinfo_quantile",
+            "incremental_count_beyond_physical": (
+                "standalone_incremental_count_beyond_physical"
+            ),
+            "incremental_errors_beyond_physical": (
+                "standalone_incremental_errors_beyond_physical"
+            ),
+        }
+    )
+    for column in ("noinfo_window", "noinfo_quantile"):
+        if column not in sensitivity:
+            sensitivity[column] = pd.NA
+    sensitivity_columns = [
+        "noinfo_variant",
+        "noinfo_calibration",
+        "noinfo_min_run",
+        "noinfo_context_radius",
+        "noinfo_window",
+        "noinfo_quantile",
+        "standalone_incremental_count_beyond_physical",
+        "standalone_incremental_errors_beyond_physical",
+    ]
+    queue = queue.merge(
+        sensitivity[sensitivity_columns],
+        on="noinfo_variant",
+        how="left",
+        validate="many_to_one",
+        suffixes=("", "_standalone"),
+    )
+
+    standalone = filter_sets.loc[
+        filter_sets["set_id"].isin(variants),
+        ["set_id", "hard_count", "gt_selected_errors"],
+    ].rename(
+        columns={
+            "set_id": "noinfo_variant",
+            "hard_count": "standalone_hard_count",
+            "gt_selected_errors": "standalone_selected_errors",
+        }
+    )
+    queue = queue.merge(
+        standalone,
+        on="noinfo_variant",
+        how="left",
+        validate="many_to_one",
+    )
+    physical_count = (
+        queue["standalone_hard_count"]
+        - queue["standalone_incremental_count_beyond_physical"]
+    )
+    physical_errors = (
+        queue["standalone_selected_errors"]
+        - queue["standalone_incremental_errors_beyond_physical"]
+    )
+    queue["incremental_count_beyond_physical"] = (
+        queue["hard_count"] - physical_count
+    ).astype(int)
+    queue["incremental_errors_beyond_physical"] = (
+        queue["gt_selected_errors"] - physical_errors
+    ).astype(int)
+    queue["error_enrichment"] = queue["gt_enrichment"]
+
+    identity_columns = [
+        "set_id",
+        "noinfo_variant",
+        "noinfo_calibration",
+        "noinfo_window",
+        "noinfo_quantile",
+        "gt_hard_count",
+    ]
+    queue = queue[identity_columns + QUEUE_REPORT_COLUMNS]
+    queue_ids = set(queue["set_id"])
+    workload = tables["workload_per_finger"]
+    workload = workload.loc[workload["set_id"].isin(queue_ids)].copy()
+    return queue.reset_index(drop=True), workload.reset_index(drop=True)
 
 
 def write_reports(
@@ -64,6 +186,11 @@ def write_reports(
             frame.to_csv(results_dir / f"{name}.csv")
         else:
             frame.to_csv(results_dir / f"{name}.csv", index=False)
+    queue_summary, queue_workload = _queue_tables(tables, pig_status)
+    queue_summary.to_csv(results_dir / "queue_summary.csv", index=False)
+    queue_workload.to_csv(
+        results_dir / "queue_workload_per_finger.csv", index=False
+    )
     individual = filter_sets[
         filter_sets["set_id"].isin(
             [
@@ -113,7 +240,7 @@ def write_reports(
             "recommendable",
         ]
     ].copy()
-    pareto["pareto_status"] = "not_assigned_until_pig_gate"
+    pareto["pareto_status"] = "not_assigned_by_pipeline"
     pareto.to_csv(results_dir / "pareto_tiers.csv", index=False)
     filter_sets.to_parquet(results_dir / "all_results.parquet", index=False)
 
@@ -126,25 +253,11 @@ def write_reports(
             label=strategy,
             alpha=0.8,
         )
-    axis.axvline(30_000, color="black", linestyle="--", linewidth=1, label="30k soft target")
     axis.set_xlabel("Selected hard notes")
     axis.set_ylabel("GT exact-error recall (all 1,800 labels)")
     axis.legend()
     fig.tight_layout()
     fig.savefig(figures_dir / "workload_vs_recall.png", dpi=160)
-    plt.close(fig)
-
-    nearest = plot.iloc[(plot["hard_count"] - 30_000).abs().argsort()[:1]]
-    nearest_id = str(nearest.iloc[0]["set_id"])
-    finger = tables["per_finger"]
-    finger = finger[(finger["set_id"] == nearest_id) & (finger["scope"] == "all_gt")]
-    fig, axis = plt.subplots(figsize=(9, 5))
-    axis.bar(finger["finger_id"], finger["error_recall"].fillna(0))
-    axis.set_ylim(0, 1)
-    axis.set_ylabel("GT exact-error recall")
-    axis.set_title(f"Per-finger recall: {nearest_id}")
-    fig.tight_layout()
-    fig.savefig(figures_dir / "per_finger_recall_nearest_30k.png", dpi=160)
     plt.close(fig)
 
     key_columns = [
@@ -159,14 +272,14 @@ def write_reports(
         "worst_finger",
         "pig_status",
     ]
+    queue_columns = ["set_id", "noinfo_variant", *QUEUE_REPORT_COLUMNS]
     report = f"""# PianoVAM Fingering-Audit Research Report
 
 ## Status
 
-The computational study completed, but the recommendation gate is closed:
-**{pig_status}**. Candidate sets are compared below; none is labeled a final
-publication recommendation until the authoritative PIG annotations validate
-the applicable fingering rules.
+Physical-policy status: **{pig_status}**. Candidate sets are compared below,
+but this report does not select a recommendation or tune a threshold to a
+target workload.
 
 ## Audit universes
 
@@ -181,6 +294,18 @@ the approximately 30,000-note “hard assigned fingering” workload.
 
 {_markdown_table(filter_sets, key_columns)}
 
+## Assigned-audit queue results
+
+{_markdown_table(queue_summary, queue_columns)}
+
+`queue_summary.csv` contains the same rows and exact overall masks used above.
+Predicted-finger workload and true-finger recall remain separately auditable
+in `queue_workload_per_finger.csv` and `per_finger.csv`, both keyed by
+`set_id`. Incremental columns measure the workload and GT errors beyond the
+PIG-authorized `physical_must_alert` queue. `data/queue_masks.parquet`
+preserves the physical diagnostic, physical must-alert, integrity, and every
+Noinfo mask even when the recommendation gate is closed.
+
 ## Interpretation safeguards
 
 - `gt_error_recall` uses all 1,800 authoritative labels, including missing
@@ -190,15 +315,9 @@ the approximately 30,000-note “hard assigned fingering” workload.
 - The LOPO rate thresholds are fitted without the held-out recording.
 - Whitelist rows report the complement of notes satisfying all required safe
   conditions; unavailable evidence is never treated as safe.
-- Every candidate is `recommendable=false` while the PIG gate is unavailable.
+- The pipeline does not select a recommendation from these candidate rows.
 - Threshold decisions and legacy-rule dispositions are documented separately
   in `docs/fingering-audit-threshold-rationale.md`.
-
-## Closest workload to 30,000
-
-The mechanically closest evaluated assigned-note set is `{nearest_id}` with
-{int(nearest.iloc[0]["hard_count"]):,} notes. This proximity does not override
-its evidence grade, held-out GT behavior, per-finger behavior, or PIG status.
 """
     markdown = report_dir / "research_report.md"
     markdown.write_text(report, encoding="utf-8")
