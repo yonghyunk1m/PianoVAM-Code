@@ -1,5 +1,36 @@
 # PianoVAM Fingering Audit: Complete Research and Implementation Record
 
+## Authoritative-offset rerun (2026-07-24)
+
+The valid production run is `20260724T163450Z-authoritative-offset-audit-e015b28b`.
+It uses original `key_offset` values from official `PianoVAM/PianoVAM_v1`
+native TSVs at immutable revision `7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8`;
+Vite `onset + 0.5`, inferred, nearest, and synthetic offsets are forbidden.
+Acquisition verified 105/105 files and 508,621/508,621 exact joins, with zero
+missing offsets, identity mismatches, and synthetic offsets; source fingering
+TSV hashes are unchanged.
+
+The earlier all-integrity run using the sidecar-less timing cache is invalid
+and excluded from conclusions. The authoritative run is complete but its PIG
+validity gate is truthfully closed because no checksum-verifiable PIG copy is
+available; therefore no recommendation or Vite audit queue is published.
+
+The exact generated physical, integrity, fixed/calibrated Noinfo, 189 strategy,
+GT/assigned recall, precision/enrichment/incremental, methods, and all-ten-finger
+tables are in the run artifacts at
+`artifacts/fingering_audit/20260724T163450Z-authoritative-offset-audit-e015b28b/`.
+Headline rows:
+
+| set | hard notes | hard % | GT recall | assigned recall | precision | enrichment | incremental errors |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `bl_two_signal_strict` | 31,066 | 6.11% | 4.08% | 13.68% | 17.78% | 1.33× | 26 |
+| `bl_step_crossing` | 3,631 | 0.71% | 0.77% | 2.56% | 30.00% | 1.38× | 3 |
+| `ni_k2_r1` | 21,651 | 4.26% | 1.53% | 5.13% | 8.45% | 0.39× | 6 |
+| `ni_k5_r4` | 2,247 | 0.44% | 0.00% | 0.00% | — | — | 0 |
+
+All ten fingers remain represented, including zero-recall fingers. Verify-only
+passed; Python (124), Node audit-category (7), and Vite build checks passed.
+
 **Study date:** 2026-07-23  
 **Consolidated:** 2026-07-24  
 **Run ID:** `20260723T122049Z-publication-audit-746e73d5`  

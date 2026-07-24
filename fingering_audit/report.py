@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from .contracts import AuditConfig
+from .manifest import sha256_file
 from .study import NOINFO_CALIBRATED_VARIANTS, NOINFO_VARIANTS
 
 
