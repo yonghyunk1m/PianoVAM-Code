@@ -7046,6 +7046,10 @@ hy_hierarchical__ni_k5_r4,R5,134,27,24,9,0.3333333333333333,0.375,assigned_gt
 
 ### Predicted-finger workload table (all ten fingers)
 
+This table has exactly 2,288 rows: 208 set IDs (189 strategy × fixed-Noinfo
+combinations plus 19 standalone/base sets), with 11 rows per set (ten fingers
+plus the generated `NA` row).
+
 ```tsv
 set_id,predicted_finger_id,eligible_notes,hard_count,hard_percentage
 mandatory_missing,L1,56961,0,0.0
