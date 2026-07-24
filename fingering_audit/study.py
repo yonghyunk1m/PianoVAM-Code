@@ -63,6 +63,7 @@ NOINFO_CALIBRATED_VARIANTS = tuple(
     for window in NOINFO_WINDOWS
     for quantile in NOINFO_QUANTILES
 )
+CROSSING_MAX_IOI_MS = 1000.0
 
 
 @dataclass
@@ -87,6 +88,17 @@ def _span_mask(features: pd.DataFrame, variant: str) -> pd.Series:
         features["directed_pair_span"].lt(lower)
         | features["directed_pair_span"].gt(upper)
     ).fillna(False)
+
+
+def _crossing_mask(
+    features: pd.DataFrame,
+    max_ioi_ms: float = CROSSING_MAX_IOI_MS,
+) -> pd.Series:
+    """Apply the audit IOI policy to the raw non-thumb crossing relation."""
+    return (
+        features["non_thumb_crossing"].fillna(False)
+        & features["prev_ioi_ms"].le(max_ioi_ms).fillna(False)
+    )
 
 
 def _valid_assignment(frame: pd.DataFrame) -> pd.Series:
@@ -429,7 +441,7 @@ def _rule_masks(
     full["span_practical"] = _span_mask(features, "practical") & eligible
     full["span_comfortable"] = _span_mask(features, "comfortable") & eligible
     full["span_relative"] = _span_mask(features, "relative") & eligible
-    full["crossing"] = features["non_thumb_crossing"].fillna(False) & eligible
+    full["crossing"] = _crossing_mask(features) & eligible
     full["step_crossing"] = (
         full["crossing"] & features["absolute_pitch_change"].le(2).fillna(False)
     )
@@ -587,8 +599,8 @@ def _metadata() -> pd.DataFrame:
         ("bl_span_practical", "blacklist", "research_supported", "Parncutt MaxPrac"),
         ("bl_span_comfortable", "blacklist", "research_supported", "Parncutt MaxComf"),
         ("bl_span_relative", "blacklist", "research_supported", "Parncutt MaxRel"),
-        ("bl_crossing", "blacklist", "research_supported_corroboration_required", "non-thumb crossing"),
-        ("bl_step_crossing", "blacklist", "exploratory", "crossing and <=2 semitones"),
+        ("bl_crossing", "blacklist", "mixed", "non-thumb crossing and IOI <=1000ms"),
+        ("bl_step_crossing", "blacklist", "exploratory", "crossing, IOI <=1000ms, and <=2 semitones"),
         ("bl_rate_q995", "blacklist", "empirically_calibrated", "LOPO 99.5th percentile"),
         ("bl_rate_q990", "blacklist", "empirically_calibrated", "LOPO 99th percentile"),
         ("bl_rate_q975", "blacklist", "empirically_calibrated", "LOPO 97.5th percentile"),

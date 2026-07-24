@@ -92,20 +92,27 @@ rules:
 
   - rule_id: non_thumb_crossing
     kind: risk
-    feature: pitch_direction_opposes_finger_direction_without_thumb
-    unit: boolean
-    operator: is_true
+    feature: pitch_direction_opposes_finger_direction_without_thumb_and_short_ioi
+    unit: boolean_and_milliseconds
+    operator: is_true_and_ioi_at_most
     evidence_grade: research_supported
     source_keys: [parncutt1997ergonomic]
     applicability: consecutive_same_hand_notes
     may_select_alone: false
-    implementation_version: 1
+    implementation_version: 2
     rationale: >-
       The ergonomic model excludes these crossings as generally impractical
       but explicitly discusses valid historical and virtuoso exceptions.
       Therefore this signal requires corroboration and cannot be invalidity.
+      The inclusive 1000 ms audit cap is a user-specified conservative policy,
+      not a published physical or ergonomic threshold; the uncapped relation
+      remains available as a diagnostic feature.
     sensitivity_variants:
-      exact_relation: {value: true}
+      audit_policy:
+        relation: true
+        max_prev_ioi_ms: 1000
+        inclusive: true
+        exploratory_cutoff: true
 
   - rule_id: time_conditioned_large_position_change
     kind: risk

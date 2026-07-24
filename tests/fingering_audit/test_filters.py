@@ -16,6 +16,7 @@ from fingering_audit.filters.strategies import (
     evaluate_filter_set,
     validate_filter_set,
 )
+from fingering_audit.study import _crossing_mask
 
 
 def _rule(name, selected, available=None, grade=EvidenceGrade.RESEARCH_SUPPORTED):
@@ -107,3 +108,20 @@ def test_mandatory_union_rejects_unequal_mask_lengths():
             noinfo=pd.Series([False, False]),
             integrity=pd.Series([False, False]),
         )
+
+
+def test_crossing_mask_has_inclusive_one_second_ioi_cap():
+    features = pd.DataFrame(
+        {
+            "non_thumb_crossing": [True, True, True, True, False],
+            "prev_ioi_ms": [0.0, 1000.0, 1000.001, np.nan, 500.0],
+        }
+    )
+
+    assert _crossing_mask(features).tolist() == [
+        True,
+        True,
+        False,
+        False,
+        False,
+    ]
