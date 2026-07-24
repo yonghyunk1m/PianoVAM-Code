@@ -170,7 +170,7 @@ def test_compound_tokens_are_excluded_from_simple_invalidity():
     assert "1-4" not in policy.observation_counts
 
 
-def test_failing_rule_remains_enabled_and_closes_recommendation_gate():
+def test_failing_rule_is_disabled_but_still_closes_recommendation_gate():
     pig = load_pig_canonical(FIXTURES / "PIG")
     pig.loc[1, ["onset_sec", "offset_sec", "finger"]] = [0.25, 0.75, 1]
 
@@ -180,11 +180,13 @@ def test_failing_rule_remains_enabled_and_closes_recommendation_gate():
     ]
 
     assert validation.status == "fail"
-    assert validation.violation_count > 0
-    assert validation.violating_ids
-    assert validation.rule_id in policy.enabled_rules
+    assert validation.violation_count == 2
+    assert validation.violating_ids == ("001-1#0@2", "001-1#1@3")
+    assert validation.rule_id not in policy.enabled_rules
     with pytest.raises(RecommendationGateError, match=validation.rule_id):
-        enforce_recommendation_gate(policy.validations, policy.enabled_rules)
+        enforce_recommendation_gate(
+            policy.validations, policy.validations.keys()
+        )
 
 
 def test_physical_policy_serialization_is_complete(tmp_path):

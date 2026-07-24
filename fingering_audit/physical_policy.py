@@ -135,7 +135,11 @@ def derive_physical_policy(
         span_boundaries=boundaries,
         observed_maxima=maxima,
         observation_counts=counts,
-        enabled_rules=frozenset(validations),
+        enabled_rules=frozenset(
+            rule_id
+            for rule_id, validation in validations.items()
+            if validation.status == "pass"
+        ),
         validations=validations,
         pig_sha256=sha256_dataset_tree(pig_root),
     )
