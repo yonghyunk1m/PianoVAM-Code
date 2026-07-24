@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from .contracts import AuditConfig
+from .study import NOINFO_CALIBRATED_VARIANTS, NOINFO_VARIANTS
 
 
 REQUIRED_RESULTS = (
@@ -27,6 +28,39 @@ REQUIRED_RESULTS = (
     "queue_workload_per_finger.csv",
 )
 
+APPROVED_BASE_RISK_IDS = (
+    "mandatory_missing",
+    "legacy_current_default",
+    "bl_span_practical",
+    "bl_span_comfortable",
+    "bl_span_relative",
+    "bl_crossing",
+    "bl_step_crossing",
+    "bl_rate_q995",
+    "bl_rate_q990",
+    "bl_rate_q975",
+    "bl_hmm_disagreement",
+    "bl_practical_or_rate995",
+    "bl_practical_or_crossing",
+    "bl_two_signal_strict",
+    "wl_model_agreement",
+    "wl_strict_obvious",
+    "hy_direct_plus_corroborated",
+    "hy_two_of_three_families",
+    "hy_hierarchical",
+)
+EXPECTED_COMBINED_QUEUE_IDS = frozenset(
+    f"{base_id}__{variant}"
+    for base_id in APPROVED_BASE_RISK_IDS
+    for variant in NOINFO_VARIANTS
+)
+EXPECTED_STANDALONE_QUEUE_IDS = frozenset(
+    (*NOINFO_VARIANTS, *NOINFO_CALIBRATED_VARIANTS)
+)
+EXPECTED_QUEUE_SELECTION_IDS = (
+    EXPECTED_COMBINED_QUEUE_IDS | EXPECTED_STANDALONE_QUEUE_IDS
+)
+
 QUEUE_REPORT_COLUMNS = [
     "base_risk_method",
     "physical_policy_status",
@@ -41,6 +75,66 @@ QUEUE_REPORT_COLUMNS = [
     "incremental_count_beyond_physical",
     "incremental_errors_beyond_physical",
 ]
+
+
+def _stable_variant_metadata(sensitivity: pd.DataFrame) -> pd.DataFrame:
+    renamed = sensitivity.rename(
+        columns={
+            "variant": "noinfo_variant",
+            "calibration": "noinfo_calibration",
+            "min_run": "noinfo_min_run",
+            "radius": "noinfo_context_radius",
+            "window": "noinfo_window",
+            "quantile": "noinfo_quantile",
+            "incremental_count_beyond_physical": (
+                "standalone_incremental_count_beyond_physical"
+            ),
+            "incremental_errors_beyond_physical": (
+                "standalone_incremental_errors_beyond_physical"
+            ),
+        }
+    )
+    stable_columns = [
+        "noinfo_calibration",
+        "noinfo_min_run",
+        "noinfo_context_radius",
+        "noinfo_window",
+        "noinfo_quantile",
+        "evidence_grade",
+        "method_identity",
+        "threshold_definition",
+        "standalone_incremental_count_beyond_physical",
+        "standalone_incremental_errors_beyond_physical",
+    ]
+    stable_columns = [
+        column for column in stable_columns if column in renamed
+    ]
+    for required in ("noinfo_window", "noinfo_quantile"):
+        if required not in stable_columns:
+            renamed[required] = pd.NA
+            stable_columns.append(required)
+
+    records = []
+    for variant, group in renamed.groupby(
+        "noinfo_variant", sort=False, dropna=False
+    ):
+        record = {"noinfo_variant": variant}
+        for column in stable_columns:
+            values = group[column]
+            nonmissing = values.loc[values.notna()].drop_duplicates()
+            mixes_missing_and_value = values.isna().any() and len(nonmissing)
+            if len(nonmissing) > 1 or mixes_missing_and_value:
+                raise ValueError(
+                    f"{variant}: inconsistent stable field {column}"
+                )
+            record[column] = (
+                nonmissing.iloc[0] if len(nonmissing) else pd.NA
+            )
+        records.append(record)
+    metadata = pd.DataFrame.from_records(records)
+    if not metadata["noinfo_variant"].is_unique:
+        raise ValueError("noinfo variant metadata must be unique")
+    return metadata
 
 
 def _markdown_table(frame: pd.DataFrame, columns: list[str]) -> str:
@@ -68,6 +162,7 @@ def _queue_tables(
     filter_sets = tables["filter_sets"]
     sensitivity = tables["noinfo_sensitivity"].copy()
     variants = set(sensitivity["variant"].dropna().astype(str))
+    variant_metadata = _stable_variant_metadata(sensitivity)
 
     def variant_for(set_id: str) -> str | None:
         candidate = set_id.split("__", 1)[1] if "__" in set_id else set_id
@@ -81,25 +176,6 @@ def _queue_tables(
     )
     queue["physical_policy_status"] = physical_policy_status
 
-    sensitivity = sensitivity.rename(
-        columns={
-            "variant": "noinfo_variant",
-            "calibration": "noinfo_calibration",
-            "min_run": "noinfo_min_run",
-            "radius": "noinfo_context_radius",
-            "window": "noinfo_window",
-            "quantile": "noinfo_quantile",
-            "incremental_count_beyond_physical": (
-                "standalone_incremental_count_beyond_physical"
-            ),
-            "incremental_errors_beyond_physical": (
-                "standalone_incremental_errors_beyond_physical"
-            ),
-        }
-    )
-    for column in ("noinfo_window", "noinfo_quantile"):
-        if column not in sensitivity:
-            sensitivity[column] = pd.NA
     sensitivity_columns = [
         "noinfo_variant",
         "noinfo_calibration",
@@ -111,7 +187,7 @@ def _queue_tables(
         "standalone_incremental_errors_beyond_physical",
     ]
     queue = queue.merge(
-        sensitivity[sensitivity_columns],
+        variant_metadata[sensitivity_columns],
         on="noinfo_variant",
         how="left",
         validate="many_to_one",

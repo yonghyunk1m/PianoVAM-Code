@@ -59,3 +59,24 @@ def test_failed_mandatory_reconciliation_cannot_finalize(tmp_path):
         )
 
     assert not (manifest.run_dir / "SUCCESS.json").exists()
+
+
+def test_failed_exact_queue_universe_cannot_close_terminal_gate(tmp_path):
+    cfg = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+    )
+    manifest = RunManifest.start(cfg, run_id="queue-universe-failure")
+
+    with pytest.raises(ValueError, match="exact_queue_selection_universe"):
+        manifest.close_recommendation_gate(
+            "PIG unavailable",
+            {
+                "mandatory_masks_contained": True,
+                "exact_queue_selection_universe": False,
+            },
+        )
+
+    assert not (
+        manifest.run_dir / "RECOMMENDATION_GATE_CLOSED.json"
+    ).exists()

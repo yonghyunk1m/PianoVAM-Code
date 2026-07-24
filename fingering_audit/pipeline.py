@@ -19,7 +19,7 @@ from .evidence import (
 from .evaluation.metrics import FINGER_IDS
 from .manifest import RunManifest, stage_key
 from .physical_policy import derive_physical_policy, write_physical_policy
-from .report import write_reports
+from .report import EXPECTED_QUEUE_SELECTION_IDS, write_reports
 from .study import build_study, summarize_study
 
 
@@ -29,6 +29,18 @@ def _run_id(config: AuditConfig, label: str | None) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     clean_label = "".join(c for c in (label or "") if c.isalnum() or c in "-_")
     return "-".join(part for part in (timestamp, clean_label, suffix) if part)
+
+
+def _queue_selection_ids(selection_ids) -> set[str]:
+    return {
+        str(set_id)
+        for set_id in selection_ids
+        if str(set_id).startswith("ni_") or "__ni_" in str(set_id)
+    }
+
+
+def reconcile_exact_queue_selection_universe(selection_ids) -> bool:
+    return _queue_selection_ids(selection_ids) == EXPECTED_QUEUE_SELECTION_IDS
 
 
 def run_research(
@@ -94,6 +106,12 @@ def run_research(
 
         stage = "study"
         study = build_study(config, physical_policy=physical_policy)
+        actual_queue_ids = _queue_selection_ids(study.selections_full)
+        exact_queue_selection_universe = (
+            reconcile_exact_queue_selection_universe(
+                study.selections_full
+            )
+        )
         data_dir = manifest.run_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         if pig_notes is not None:
@@ -141,7 +159,7 @@ def run_research(
         )
 
         queue_variants = {}
-        for set_id in study.selections_full:
+        for set_id in actual_queue_ids:
             candidate = (
                 set_id.split("__", 1)[1] if "__" in set_id else set_id
             )
@@ -189,11 +207,15 @@ def run_research(
         queue_workload = pd.read_csv(
             manifest.run_dir / "results/queue_workload_per_finger.csv"
         )
-        queue_ids = set(queue_variants)
+        filter_queue = tables["filter_sets"].loc[
+            tables["filter_sets"]["set_id"].isin(
+                _queue_selection_ids(tables["filter_sets"]["set_id"])
+            )
+        ]
         filter_counts = (
-            tables["filter_sets"]
+            filter_queue
             .set_index("set_id")
-            .loc[list(queue_ids), "hard_count"]
+            ["hard_count"]
             .astype(int)
             .to_dict()
         )
@@ -211,9 +233,13 @@ def run_research(
         all_gt_finger_counts = (
             tables["per_finger"]
             .loc[lambda frame: frame["scope"].eq("all_gt")]
+            .loc[
+                lambda frame: frame["set_id"].isin(
+                    _queue_selection_ids(frame["set_id"])
+                )
+            ]
             .groupby("set_id")["selected_notes"]
             .sum()
-            .loc[list(queue_ids)]
             .astype(int)
             .to_dict()
         )
@@ -233,6 +259,9 @@ def run_research(
                 for row in tables["filter_sets"].itertuples()
             ),
             "report_files_present": all(path.is_file() for path in files),
+            "exact_queue_selection_universe": (
+                exact_queue_selection_universe
+            ),
             "mandatory_masks_contained": (
                 bool(queue_variants) and mandatory_masks_contained
             ),
@@ -240,15 +269,18 @@ def run_research(
                 bool(queue_variants) and integrity_disjoint_from_assigned
             ),
             "queue_summary_reconciles": (
-                queue_ids == set(queue_counts)
+                EXPECTED_QUEUE_SELECTION_IDS == set(filter_counts)
+                and EXPECTED_QUEUE_SELECTION_IDS == set(queue_counts)
                 and queue_counts == filter_counts
             ),
             "queue_workload_reconciles": (
-                queue_ids == set(workload_counts)
+                EXPECTED_QUEUE_SELECTION_IDS == set(workload_counts)
                 and workload_counts == queue_counts
             ),
             "queue_per_finger_reconciles": (
-                queue_ids == set(queue_gt_counts)
+                EXPECTED_QUEUE_SELECTION_IDS == set(queue_gt_counts)
+                and EXPECTED_QUEUE_SELECTION_IDS
+                == set(all_gt_finger_counts)
                 and queue_gt_counts == all_gt_finger_counts
             ),
         }

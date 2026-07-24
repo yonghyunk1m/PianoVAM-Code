@@ -38,6 +38,38 @@ CALIBRATED_VARIANTS = {
     for quantile in (995, 990, 975)
 }
 FIXTURES = Path(__file__).parent / "fixtures"
+APPROVED_BASE_RISK_IDS = (
+    "mandatory_missing",
+    "legacy_current_default",
+    "bl_span_practical",
+    "bl_span_comfortable",
+    "bl_span_relative",
+    "bl_crossing",
+    "bl_step_crossing",
+    "bl_rate_q995",
+    "bl_rate_q990",
+    "bl_rate_q975",
+    "bl_hmm_disagreement",
+    "bl_practical_or_rate995",
+    "bl_practical_or_crossing",
+    "bl_two_signal_strict",
+    "wl_model_agreement",
+    "wl_strict_obvious",
+    "hy_direct_plus_corroborated",
+    "hy_two_of_three_families",
+    "hy_hierarchical",
+)
+EXPECTED_COMBINED_QUEUE_IDS = frozenset(
+    f"{base_id}__{variant}"
+    for base_id in APPROVED_BASE_RISK_IDS
+    for variant in NOINFO_VARIANTS
+)
+EXPECTED_STANDALONE_QUEUE_IDS = frozenset(
+    {*NOINFO_VARIANTS, *CALIBRATED_VARIANTS}
+)
+EXPECTED_QUEUE_SELECTION_IDS = (
+    EXPECTED_COMBINED_QUEUE_IDS | EXPECTED_STANDALONE_QUEUE_IDS
+)
 
 
 def test_required_results_include_queue_tables():
@@ -61,6 +93,73 @@ def test_queue_report_columns_name_auditable_metrics():
         "incremental_count_beyond_physical",
         "incremental_errors_beyond_physical",
     ]
+
+
+def test_exported_queue_selection_contract_is_exact_and_independent():
+    assert getattr(report_module, "APPROVED_BASE_RISK_IDS", None) == (
+        APPROVED_BASE_RISK_IDS
+    )
+    assert getattr(report_module, "EXPECTED_COMBINED_QUEUE_IDS", None) == (
+        EXPECTED_COMBINED_QUEUE_IDS
+    )
+    assert getattr(report_module, "EXPECTED_STANDALONE_QUEUE_IDS", None) == (
+        EXPECTED_STANDALONE_QUEUE_IDS
+    )
+    assert len(EXPECTED_COMBINED_QUEUE_IDS) == 171
+    assert len(EXPECTED_STANDALONE_QUEUE_IDS) == 18
+    assert len(EXPECTED_QUEUE_SELECTION_IDS) == 189
+
+
+def test_complete_exact_queue_selection_universe_passes():
+    reconcile = getattr(
+        pipeline_module,
+        "reconcile_exact_queue_selection_universe",
+        lambda selection_ids: None,
+    )
+
+    assert reconcile(EXPECTED_QUEUE_SELECTION_IDS) is True
+
+
+def test_missing_combined_queue_selection_fails_exact_universe():
+    reconcile = getattr(
+        pipeline_module,
+        "reconcile_exact_queue_selection_universe",
+        lambda selection_ids: None,
+    )
+    missing = next(iter(EXPECTED_COMBINED_QUEUE_IDS))
+    selections = dict.fromkeys(EXPECTED_QUEUE_SELECTION_IDS, True)
+    selections.pop(missing)
+
+    assert reconcile(selections) is False
+
+
+def test_missing_standalone_queue_selection_fails_exact_universe():
+    reconcile = getattr(
+        pipeline_module,
+        "reconcile_exact_queue_selection_universe",
+        lambda selection_ids: None,
+    )
+    missing = next(iter(EXPECTED_STANDALONE_QUEUE_IDS))
+    selections = dict.fromkeys(EXPECTED_QUEUE_SELECTION_IDS, True)
+    selections.pop(missing)
+
+    assert reconcile(selections) is False
+
+
+def test_extra_queue_selection_fails_exact_universe():
+    reconcile = getattr(
+        pipeline_module,
+        "reconcile_exact_queue_selection_universe",
+        lambda selection_ids: None,
+    )
+
+    assert (
+        reconcile(
+            EXPECTED_QUEUE_SELECTION_IDS
+            | {"unexpected_method__ni_k2_r1"}
+        )
+        is False
+    )
 
 
 @pytest.mark.filterwarnings("ignore:All-NaN slice encountered:RuntimeWarning")
@@ -191,6 +290,10 @@ def test_failed_physical_validation_emits_diagnostics_and_closes_gate(
     )
 
     assert failed_rule in observed["reason"]
+    assert (
+        observed["reconciliations"]["exact_queue_selection_universe"]
+        is True
+    )
     assert (run_dir / "data/physical_policy.yaml").is_file()
     assert (run_dir / "data/queue_masks.parquet").is_file()
     assert (run_dir / "results/queue_summary.csv").is_file()
@@ -439,6 +542,92 @@ def test_written_queue_tables_reconcile_with_filter_and_finger_outputs(
     assert "queue_summary.csv" in markdown
     assert "queue_workload_per_finger.csv" in markdown
     assert "per_finger.csv" in markdown
+
+
+def _study_with_calibrated_fold_rows(
+    study, *, windows=(5, 5)
+):
+    variant = "ni_w5_q995"
+    sensitivity = study.noinfo_sensitivity
+    base = sensitivity.query("variant == @variant").iloc[0].to_dict()
+    folds = pd.DataFrame.from_records(
+        [
+            {
+                **base,
+                "window": window,
+                "quantile": 0.995,
+                "held_out_recording": recording,
+                "threshold": threshold,
+                "train_nonzero_notes": 3,
+            }
+            for window, recording, threshold in zip(
+                windows, ("a", "b"), (0.25, 0.75)
+            )
+        ]
+    )
+    return replace(
+        study,
+        noinfo_sensitivity=pd.concat(
+            [sensitivity.query("variant != @variant"), folds],
+            ignore_index=True,
+        ),
+    )
+
+
+def test_multifold_calibrated_sensitivity_writes_one_queue_row_per_selection(
+    study, tmp_path
+):
+    multifold = _study_with_calibrated_fold_rows(study)
+    tables = summarize_study(multifold, "fixture", seed=7)
+
+    calibrated = tables["noinfo_sensitivity"].query(
+        "variant == 'ni_w5_q995'"
+    )
+    assert len(calibrated) == 2
+    assert set(calibrated["held_out_recording"]) == {"a", "b"}
+
+    files = report_module.write_reports(
+        tmp_path,
+        tables,
+        corpus_notes=len(study.notes),
+        assigned_notes=int(study.notes["pred_finger_id"].notna().sum()),
+        missing_notes=int(study.notes["pred_finger_id"].isna().sum()),
+        pig_status="fixture",
+    )
+
+    written_sensitivity = pd.read_csv(
+        tmp_path / "results/noinfo_sensitivity.csv"
+    )
+    queue = pd.read_csv(tmp_path / "results/queue_summary.csv")
+    expected_queue_rows = tables["filter_sets"]["set_id"].astype(str).map(
+        lambda set_id: set_id.startswith("ni_") or "__ni_" in set_id
+    )
+    assert len(
+        written_sensitivity.query("variant == 'ni_w5_q995'")
+    ) == 2
+    assert queue["set_id"].is_unique
+    assert len(queue) == int(expected_queue_rows.sum())
+    assert all(path.is_file() for path in files)
+
+
+def test_inconsistent_multifold_variant_metadata_is_rejected(study, tmp_path):
+    inconsistent = _study_with_calibrated_fold_rows(
+        study, windows=(5, 9)
+    )
+    tables = summarize_study(inconsistent, "fixture", seed=7)
+
+    with pytest.raises(
+        ValueError,
+        match="inconsistent.*noinfo_window",
+    ):
+        report_module.write_reports(
+            tmp_path,
+            tables,
+            corpus_notes=len(study.notes),
+            assigned_notes=int(study.notes["pred_finger_id"].notna().sum()),
+            missing_notes=int(study.notes["pred_finger_id"].isna().sum()),
+            pig_status="fixture",
+        )
 
 
 def test_legacy_default_preserves_original_noinfo_cluster_context(tmp_path):
