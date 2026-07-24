@@ -422,16 +422,40 @@ def verify_report(
     latest_success: bool,
 ) -> dict:
     if run_dir is None:
-        candidates = sorted(config.artifact_root.glob("*"))
-        if latest_success:
-            candidates = [path for path in candidates if (path / "SUCCESS.json").is_file()]
-        if not candidates:
-            return {"verification_status": "FAIL", "reason": "no matching run"}
-        run_dir = candidates[-1]
-    missing = [
-        name for name in REQUIRED_RESULTS if not (run_dir / "results" / name).is_file()
-    ]
-    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        candidates = [path for path in config.artifact_root.glob("*") if path.is_dir()]
+        # Select the newest complete, terminal, internally reconciled run; a
+        # newer failed/stale directory must never shadow an older valid run.
+        candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        run_dir = None
+        for candidate in candidates:
+            try:
+                manifest = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            status = manifest.get("status")
+            marker = (candidate / ("SUCCESS.json" if status == "success" else "RECOMMENDATION_GATE_CLOSED.json"))
+            if status in {"success", "complete_with_recommendation_gate_closed"} and marker.is_file() and all(manifest.get("reconciliations", {}).values()):
+                if latest_success and status != "success":
+                    continue
+                run_dir = candidate
+                break
+        if run_dir is None:
+            return {"verification_status": "FAIL", "reason": "no matching valid run"}
+    run_dir = Path(run_dir)
+    try:
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"verification_status": "FAIL", "run_dir": str(run_dir.resolve()), "reason": "invalid manifest"}
+    status = manifest.get("status")
+    expected_marker = "SUCCESS.json" if status == "success" else "RECOMMENDATION_GATE_CLOSED.json"
+    missing = []
+    if status not in {"success", "complete_with_recommendation_gate_closed"}:
+        missing.append("valid terminal manifest status")
+    if not (run_dir / expected_marker).is_file():
+        missing.append(expected_marker)
+    if not manifest.get("reconciliations") or not all(manifest["reconciliations"].values()):
+        missing.append("manifest reconciliations")
+    missing.extend(name for name in REQUIRED_RESULTS if not (run_dir / "results" / name).is_file())
     timing_path = run_dir / "data" / "timing_provenance.csv"
     timing_ok = False
     if timing_path.is_file():
@@ -464,6 +488,19 @@ def verify_report(
                 if source.stat().st_size != int(row.byte_count) or sha256_file(source) != str(row.sha256):
                     timing_ok = False
             timing_ok &= existing_sources == len(timing)
+            # Verify the run-recorded fingering inputs independently of timing
+            # provenance. This prevents a report from being reused after its
+            # source TSVs have been edited or removed.
+            source_records = manifest.get("source_fingering_files", [])
+            if len(source_records) != 105:
+                timing_ok = False
+            for record in source_records:
+                source = Path(str(record.get("path", "")))
+                if not source.is_file():
+                    timing_ok = False
+                    continue
+                if source.stat().st_size != int(record.get("byte_count", -1)) or sha256_file(source) != str(record.get("sha256", "")):
+                    timing_ok = False
         except Exception:
             timing_ok = False
     if not timing_ok:

@@ -19,7 +19,7 @@ from .evidence import (
     load_evidence_ledger,
 )
 from .evaluation.metrics import FINGER_IDS
-from .manifest import RunManifest, stage_key
+from .manifest import RunManifest, source_file_manifest, stage_key
 from .physical_policy import derive_physical_policy, write_physical_policy
 from .report import EXPECTED_QUEUE_SELECTION_IDS, write_reports
 from .study import build_study, summarize_study
@@ -146,6 +146,11 @@ def run_research(
 
         stage = "timing"
         raw_notes = load_pianovam_notes(config.pianovam_fingering_dir)
+        source_files = source_file_manifest(config.pianovam_fingering_dir)
+        if len(source_files) != raw_notes["recording_id"].nunique():
+            raise ValueError("source fingering TSV manifest is incomplete")
+        manifest.payload["source_fingering_files"] = source_files
+        manifest._write()
         timing_source = ensure_authoritative_timing(
             config, tuple(sorted(raw_notes["recording_id"].unique()))
         )

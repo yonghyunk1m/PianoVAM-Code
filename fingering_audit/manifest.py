@@ -19,6 +19,20 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def source_file_manifest(root: Path) -> list[dict[str, Any]]:
+    """Record immutable byte-level fingerprints for every source fingering TSV."""
+    root = Path(root).resolve()
+    records = []
+    for path in sorted(root.glob("*.tsv")):
+        records.append({
+            "relative_path": path.relative_to(root).as_posix(),
+            "path": str(path),
+            "byte_count": path.stat().st_size,
+            "sha256": sha256_file(path),
+        })
+    return records
+
+
 def stage_key(
     name: str,
     inputs: Mapping[str, str],
