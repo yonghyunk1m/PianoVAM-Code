@@ -3,6 +3,11 @@ import PianoRoll from './PianoRoll.jsx';
 import PlaybackBar from './PlaybackBar.jsx';
 import { pushSnapshot, listSnapshots, loadSnapshot, clearAllSnapshots } from './backup.js';
 import { FINGER_INT_COLOR, FINGER_INT_NAME, INT_TO_LABEL } from './fingerPalette.js';
+import {
+  explicitAuditPriority,
+  hardReasonsForNote,
+  isAuditNote,
+} from './auditCategories.js';
 
 // Trial is selected via URL param ?trial=<name>.  All per-trial state is
 // keyed by this name so switching trials (full page reload) never bleeds
@@ -708,7 +713,7 @@ export default function App() {
       const end   = pass === 0 ? data.notes.length : idx;
       for (let i = begin; i < end; i++) {
         const n = data.notes[i];
-        if (!isAuditReviewNote(n)) continue;
+        if (!isAuditNote(n)) continue;
         const v = verdicts[`${n.trial}#${n.note_idx}`];
         if (v && v.timestamp && !v.source) continue;   // already reviewed
         setIdx(i); return;
@@ -721,7 +726,7 @@ export default function App() {
       const end   = pass === 0 ? -1 : idx;
       for (let i = begin; i > end; i--) {
         const n = data.notes[i];
-        if (!isAuditReviewNote(n)) continue;
+        if (!isAuditNote(n)) continue;
         const v = verdicts[`${n.trial}#${n.note_idx}`];
         if (v && v.timestamp && !v.source) continue;   // already reviewed
         setIdx(i); return;
@@ -853,7 +858,7 @@ export default function App() {
   const hardStats = (() => {
     let total = 0, done = 0;
     for (const n of data.notes) {
-      if (!isAuditReviewNote(n)) continue;
+      if (!isAuditNote(n)) continue;
       total++;
       const nv = verdicts[`${n.trial}#${n.note_idx}`];
       if (nv && nv.timestamp && !nv.source) done++;
@@ -1010,7 +1015,7 @@ export default function App() {
                 }
               } else {
                 const p = priorityForNote(note);
-                const isHardRuleNote = isAuditReviewNote(note);
+                const isHardRuleNote = isAuditNote(note);
                 const isImputed = v && v.source === 'imputed';
                 const isAlgoBulk = v && v.source === 'algo' && !reviewed;
                 if (p && !reviewed) {
@@ -1318,47 +1323,8 @@ const HARD_RULE_PRIORITY = {
   noinfo: 72,
 };
 
-function hardReasonsForNote(n) {
-  if (!n) return [];
-  if (Array.isArray(n.hard_reasons)) {
-    return n.hard_reasons.filter(Boolean);
-  }
-  if (typeof n.hard_reasons === 'string' && n.hard_reasons.trim()) {
-    return n.hard_reasons.split(',').map(s => s.trim()).filter(Boolean);
-  }
-  return [];
-}
-
-function explicitAuditPriority(n) {
-  if (n?.physical_must_alert) {
-    return {
-      score: 110,
-      reason: `physical must-alert: ${(n.physical_reasons || []).join(', ')}`,
-    };
-  }
-  if (n?.data_integrity_must_resolve) {
-    return {
-      score: 105,
-      reason: `data integrity: ${(n.data_integrity_reasons || []).join(', ')}`,
-    };
-  }
-  if (n?.noinfo_context_alert) {
-    return {
-      score: 98,
-      reason: `near Noinfo region: ${(n.noinfo_context_reasons || []).join(', ')}`,
-    };
-  }
-  return null;
-}
-
-function isAuditReviewNote(n) {
-  return !!explicitAuditPriority(n)
-    || !!n?.is_hard
-    || hardReasonsForNote(n).length > 0;
-}
-
 function hasManualPriority(data) {
-  return !!data?.notes?.some(isAuditReviewNote);
+  return !!data?.notes?.some(isAuditNote);
 }
 
 function reviewedLabel(v) {

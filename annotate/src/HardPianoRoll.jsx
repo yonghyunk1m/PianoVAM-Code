@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
+import { isAuditNote } from './auditCategories.js';
 
 const BLACK_KEY_PC = new Set([1, 3, 6, 8, 10]);
 
@@ -13,10 +14,6 @@ const HARD_DISAGREE_FILL   = '#E65100';   // hard + human differs algo  → oran
 const HARD_PENDING_FILL    = '#90CAF9';   // hard + no human verdict    → light blue
 const OTHER_FILL           = '#D8D8E0';   // non-hard notes             → grey
 const PITCH_COL_W          = 56;          // left column for pitch labels
-
-function isHard(n) {
-  return n.is_hard || (Array.isArray(n.hard_reasons) && n.hard_reasons.length > 0);
-}
 
 export default function HardPianoRoll({
   trialNotes, currentNoteIdx, verdicts = {},
@@ -107,7 +104,7 @@ export default function HardPianoRoll({
       const yBot = yOf(n.onset_sec);
       const h    = Math.max(3, yBot - yTop);
       const isCur  = n.global_idx === cur.global_idx;
-      const hard   = isHard(n);
+      const hard   = isAuditNote(n);
       const vv     = verdicts[`${n.trial}#${n.note_idx}`];
       const humanV = (vv && vv.timestamp && !vv.source) ? vv : null;
       const disagrees = humanV && n.algorithm_int && humanV.finger_int !== n.algorithm_int;

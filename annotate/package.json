@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:audit-categories": "node --test --test-isolation=none test/auditCategories.test.js"
   },
   "dependencies": {
     "react": "^18.2.0",

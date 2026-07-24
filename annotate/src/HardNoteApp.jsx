@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import HardPianoRoll from './HardPianoRoll.jsx';
 import PlaybackBar from './PlaybackBar.jsx';
 import { FINGER_INT_COLOR, FINGER_INT_NAME, INT_TO_LABEL } from './fingerPalette.js';
+import {
+  auditCategoryForNote,
+  hardReasonsForNote,
+  isAuditNote,
+} from './auditCategories.js';
 
 // Share verdict storage with the main app so labels persist across modes.
 const _urlTrial = new URLSearchParams(window.location.search).get('trial') || 'default';
@@ -21,10 +26,6 @@ const _normalModeUrl = (() => {
 function loadJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
   catch { return fallback; }
-}
-
-function isHard(n) {
-  return n.is_hard || (Array.isArray(n.hard_reasons) && n.hard_reasons.length > 0);
 }
 
 function classifyVerdict(v) {
@@ -85,7 +86,7 @@ export default function HardNoteApp() {
   // ── Jump to first hard note once data+verdicts are ready ──
   useEffect(() => {
     if (!data) return;
-    const first = data.notes.findIndex(isHard);
+    const first = data.notes.findIndex(isAuditNote);
     if (first >= 0) setIdx(first);
   }, [data]);
 
@@ -118,14 +119,14 @@ export default function HardNoteApp() {
     [data, note?.trial]);
 
   const hardNotes = useMemo(
-    () => (data ? data.notes.filter(isHard) : []),
+    () => (data ? data.notes.filter(isAuditNote) : []),
     [data]);
 
   const hardStats = useMemo(() => {
     if (!data) return { total: 0, done: 0 };
     let total = 0, done = 0;
     for (const n of data.notes) {
-      if (!isHard(n)) continue;
+      if (!isAuditNote(n)) continue;
       total++;
       const v = verdicts[`${n.trial}#${n.note_idx}`];
       if (v && v.timestamp && !v.source) done++;
@@ -240,19 +241,19 @@ export default function HardNoteApp() {
   function jumpNextHard() {
     if (!data) return;
     for (let i = idx + 1; i < data.notes.length; i++) {
-      if (isHard(data.notes[i])) { setIdx(i); return; }
+      if (isAuditNote(data.notes[i])) { setIdx(i); return; }
     }
     for (let i = 0; i < idx; i++) {
-      if (isHard(data.notes[i])) { setIdx(i); return; }
+      if (isAuditNote(data.notes[i])) { setIdx(i); return; }
     }
   }
   function jumpPrevHard() {
     if (!data) return;
     for (let i = idx - 1; i >= 0; i--) {
-      if (isHard(data.notes[i])) { setIdx(i); return; }
+      if (isAuditNote(data.notes[i])) { setIdx(i); return; }
     }
     for (let i = data.notes.length - 1; i > idx; i--) {
-      if (isHard(data.notes[i])) { setIdx(i); return; }
+      if (isAuditNote(data.notes[i])) { setIdx(i); return; }
     }
   }
 
@@ -355,9 +356,9 @@ export default function HardNoteApp() {
     </div>
   );
   if (!data || !note) return <div style={{ padding: 40 }}>Loading…</div>;
-  if (!isHard(note)) {
-    // Current idx isn't a hard note (shouldn't happen after init, but guard it).
-    return <div style={{ padding: 40 }}>No hard notes found in this trial.</div>;
+  if (!isAuditNote(note)) {
+    // Current idx isn't an audit note (shouldn't happen after init, but guard it).
+    return <div style={{ padding: 40 }}>No audit notes found in this trial.</div>;
   }
 
   const v          = verdicts[`${note.trial}#${note.note_idx}`];
@@ -365,6 +366,15 @@ export default function HardNoteApp() {
   const trialLocalIdx = trialNotes.findIndex(n => n.global_idx === note.global_idx);
   const hardLocalIdx  = hardNotes.findIndex(n => n.global_idx === note.global_idx);
   const donePct    = hardStats.total ? Math.round(100 * hardStats.done / hardStats.total) : 0;
+  const auditCategory = auditCategoryForNote(note);
+  const legacyReasons = hardReasonsForNote(note);
+  const auditDetail = auditCategory
+    ? `${auditCategory.label}${
+        auditCategory.reasons.length > 0
+          ? ` — ${auditCategory.reasons.join(', ')}`
+          : ''
+      }`
+    : legacyReasons.join(', ');
 
   return (
     <div className="app">
@@ -399,9 +409,9 @@ export default function HardNoteApp() {
           <b>{note.piece || note.trial}</b>
           {' · '}{note.pitch_name} (MIDI {note.pitch})
           {' · '}onset {note.onset_sec.toFixed(3)} s
-          {note.hard_reasons?.length > 0 && (
+          {auditDetail && (
             <span style={{ marginLeft: 8, color: '#D32F2F', fontWeight: 700 }}>
-              🔴 {note.hard_reasons.join(', ')}
+              🔴 {auditDetail}
             </span>
           )}
         </span>
@@ -443,7 +453,7 @@ export default function HardNoteApp() {
               onSeek={t => { if (videoRef.current) videoRef.current.currentTime = t; }}
               onSelectNote={gidx => {
                 const target = data.notes.findIndex(n => n.global_idx === gidx);
-                if (target >= 0 && isHard(data.notes[target])) setIdx(target);
+                if (target >= 0 && isAuditNote(data.notes[target])) setIdx(target);
               }}
             />
             <div className="roll-info">
