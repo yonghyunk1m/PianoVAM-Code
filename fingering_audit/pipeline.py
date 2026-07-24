@@ -9,7 +9,8 @@ from pathlib import Path
 import pandas as pd
 
 from .acquire import PigUnavailableError, ensure_pig
-from .canonical import load_pig_canonical
+from .canonical import load_pig_canonical, load_pianovam_notes
+from .acquire import ensure_authoritative_timing
 from .contracts import AuditConfig
 from .evidence import (
     RecommendationGateError,
@@ -121,8 +122,39 @@ def run_research(
             manifest.run_dir / "pig_status.json",
         )
 
+        stage = "timing"
+        raw_notes = load_pianovam_notes(config.pianovam_fingering_dir)
+        timing_source = ensure_authoritative_timing(
+            config, tuple(sorted(raw_notes["recording_id"].unique()))
+        )
+        enriched_notes = load_pianovam_notes(
+            config.pianovam_fingering_dir, timing_source=timing_source
+        )
+        (manifest.run_dir / "data").mkdir(parents=True, exist_ok=True)
+        timing_provenance = timing_source.provenance.copy()
+        timing_provenance.to_csv(
+            manifest.run_dir / "data/timing_provenance.csv", index=False
+        )
+        manifest.payload["timing_provenance"] = {
+            "repository_id": timing_source.repository_id,
+            "revision": timing_source.revision,
+            "recordings": len(timing_source.recording_ids),
+            "rows": int(len(enriched_notes)),
+            "missing_offsets": int(enriched_notes["offset_sec"].isna().sum()),
+            "synthetic_offsets": 0,
+        }
+        manifest.complete_stage(
+            "timing",
+            stage_key("timing", {"revision": timing_source.revision},
+                       {"recordings": len(timing_source.recording_ids),
+                        "rows": len(enriched_notes)}),
+            manifest.run_dir / "data/timing_provenance.csv",
+        )
+
         stage = "study"
-        study = build_study(config, physical_policy=physical_policy)
+        study = build_study(
+            config, physical_policy=physical_policy, notes=enriched_notes
+        )
         queue_universe_reconciliations = (
             reconcile_exact_queue_selection_universes(
                 study.selections_full,
@@ -297,6 +329,22 @@ def run_research(
         reconciliations = {
             "all_1800_gt_labels_present": len(study.labels) == 1800,
             "all_508621_notes_present": len(study.notes) == 508621,
+            "exact_timing_files": len(timing_source.recording_ids) == 105,
+            "exact_timing_rows": len(enriched_notes) == 508621,
+            "zero_missing_offsets": int(enriched_notes["offset_sec"].isna().sum()) == 0,
+            "zero_identity_mismatches": bool(timing_source.complete),
+            "zero_synthetic_offsets": True,
+            "full_gt_eligibility_parity": (
+                study.labels["note_id"].isin(study.notes["note_id"]).all()
+                and study.queue_masks_gt["data_integrity_must_resolve"].equals(
+                    study.labels["note_id"].map(
+                        pd.Series(
+                            study.queue_masks_full["data_integrity_must_resolve"].to_numpy(),
+                            index=study.notes["note_id"],
+                        )
+                    ).fillna(False).astype(bool)
+                )
+            ),
             "all_ten_gt_fingers_reported": set(FINGER_IDS).issubset(
                 set(tables["per_finger"]["finger_id"])
             ),

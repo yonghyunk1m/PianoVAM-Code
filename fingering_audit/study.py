@@ -382,6 +382,7 @@ def _oof_upper_tail(
     notes: pd.DataFrame,
     labels: pd.DataFrame,
     quantile: float,
+    full_eligible: pd.Series | None = None,
 ) -> tuple[pd.Series, pd.Series, pd.DataFrame]:
     score = features["position_change_rate"].replace([np.inf, -np.inf], np.nan)
     labeled_score = labels["note_id"].map(pd.Series(score.to_numpy(), index=notes["note_id"]))
@@ -406,6 +407,10 @@ def _oof_upper_tail(
         )
     deployment_threshold = float(np.median(thresholds))
     full_mask = score.ge(deployment_threshold).fillna(False)
+    if full_eligible is not None:
+        full_mask &= pd.Series(full_eligible).reset_index(drop=True)
+        gt_eligible = _map_to_gt(full_eligible, notes, labels)
+        gt_mask &= gt_eligible.reset_index(drop=True)
     return full_mask, gt_mask, pd.DataFrame.from_records(rows)
 
 
@@ -448,7 +453,7 @@ def _rule_masks(
     threshold_rows = []
     for name, quantile in (("rate_q995", 0.995), ("rate_q990", 0.990), ("rate_q975", 0.975)):
         full[name], gt[name], rows = _oof_upper_tail(
-            features, notes, labels, quantile
+            features, notes, labels, quantile, full_eligible=eligible
         )
         full[name] &= eligible
         threshold_rows.append(rows.assign(rule_mask=name))
@@ -634,8 +639,10 @@ def _metadata() -> pd.DataFrame:
 def build_study(
     config: AuditConfig,
     physical_policy: PhysicalPolicy | None = None,
+    notes: pd.DataFrame | None = None,
 ) -> StudyData:
-    notes = load_pianovam_notes(config.pianovam_fingering_dir)
+    notes = (load_pianovam_notes(config.pianovam_fingering_dir)
+             if notes is None else notes.copy())
     gt = load_ground_truth(config.ground_truth_module)
     labels = label_errors(attach_ground_truth(notes, gt))
     physical_masks = _physical_candidate_masks(notes, physical_policy)
