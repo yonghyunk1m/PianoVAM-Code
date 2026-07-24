@@ -2,7 +2,7 @@
 
 ## Authoritative-offset rerun (2026-07-24)
 
-The valid production run is `20260724T165823Z-authoritative-offset-audit-final-e015b28b`.
+The valid production run is `20260724T181031Z-crossing-ioi-cap-e015b28b`.
 It uses original `key_offset` values from official `PianoVAM/PianoVAM_v1`
 native TSVs at immutable revision `7aa9d7d8c061b7127cfd2fc6c3cd66bc441b94b8`;
 Vite `onset + 0.5`, inferred, nearest, and synthetic offsets are forbidden.
@@ -11,16 +11,19 @@ missing offsets, identity mismatches, and synthetic offsets; source fingering
 TSV hashes are unchanged.
 
 The earlier all-integrity run using the sidecar-less timing cache is invalid
-and excluded from conclusions. The authoritative run is complete but its PIG
-validity gate is truthfully closed because no checksum-verifiable PIG copy is
-available; therefore no recommendation or Vite audit queue is published.
+and excluded from conclusions. The `20260724T165823Z` authoritative-offset
+run was valid but is superseded by this run, which adds the user-specified
+inclusive `1000 ms` IOI cap to crossing-based audit masks. The current run is
+complete but its PIG validity gate is truthfully closed because no
+checksum-verifiable PIG copy is available; therefore no recommendation or
+Vite audit queue is published.
 
 The exact generated physical, integrity, fixed/calibrated Noinfo, 189 strategy,
 GT/assigned recall, precision/enrichment/incremental, methods, and all-ten-finger
 tables are committed as GitHub-viewable CSV files in
 [`docs/fingering-audit-results/`](fingering-audit-results/). They are a byte-for-byte
 snapshot of the final run's `results/` directory at
-`artifacts/fingering_audit/20260724T165823Z-authoritative-offset-audit-final-e015b28b/`.
+`artifacts/fingering_audit/20260724T181031Z-crossing-ioi-cap-e015b28b/`.
 The primary tables are
 [`filter_sets.csv`](fingering-audit-results/filter_sets.csv),
 [`individual_filters.csv`](fingering-audit-results/individual_filters.csv),
@@ -32,15 +35,16 @@ contains the overlap, Pareto, per-recording, threshold, error-type, exclusion,
 and general workload tables.
 Headline rows:
 
-| set | hard notes | hard % | GT recall | assigned recall | precision | enrichment | incremental errors |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `bl_two_signal_strict` | 31,066 | 6.11% | 4.08% | 13.68% | 17.78% | 1.33× | 26 |
-| `bl_step_crossing` | 3,631 | 0.71% | 0.77% | 2.56% | 30.00% | 1.38× | 3 |
-| `ni_k2_r1` | 21,651 | 4.26% | 1.53% | 5.13% | 8.45% | 0.39× | 6 |
-| `ni_k5_r4` | 2,247 | 0.44% | 0.00% | 0.00% | — | — | 0 |
+| set | hard notes | hard % | GT recall | assigned recall | precision |
+|---|---:|---:|---:|---:|---:|
+| `bl_two_signal_strict` | 30,778 | 6.05% | 4.08% | 13.68% | 18.60% |
+| `bl_crossing` | 8,335 | 1.64% | 1.79% | 5.98% | 35.00% |
+| `bl_step_crossing` | 3,328 | 0.65% | 0.77% | 2.56% | 42.86% |
+| `ni_k2_r1` | 21,651 | 4.26% | 1.53% | 5.13% | 8.45% |
+| `ni_k5_r4` | 2,247 | 0.44% | 0.00% | 0.00% | — |
 
 All ten fingers remain represented, including zero-recall fingers. Verify-only
-passed; Python (124), Node audit-category (7), and Vite build checks passed.
+passed; Python (125), Node audit-category (7), and Vite build checks passed.
 
 **Study date:** 2026-07-23  
 **Consolidated:** 2026-07-24  
@@ -63,13 +67,13 @@ target. Thresholds were not adjusted merely to reach that number.
 The main conclusions are:
 
 1. No evaluated set is currently defensible as a final publication filter.
-2. The closest set to 30,000 notes selects 31,066 notes but recalls only 4.08%
+2. The closest set to 30,000 notes selects 30,778 notes but recalls only 4.08%
    of all authoritative errors (95% recording-clustered interval:
    1.68%–6.71%).
 3. The corpus contains 74,248 notes without any hand/finger label. These
    account for 275 of the 392 ground-truth errors.
-4. Filtering is strongly nonuniform by finger. In the 31,066-note set, the
-   selected workload ranges from 1.70% of `R1` notes to 20.52% of `L4` notes.
+4. Filtering is strongly nonuniform by finger. In the 30,778-note set, the
+   selected workload ranges from 1.70% of `R1` notes to 20.51% of `L4` notes.
 5. PIG v1.02 is not present locally and its official page does not provide a
    checksum-verifiable unattended download. No set is therefore marked
    recommendable, and no Vite review queue was exported.
@@ -221,7 +225,16 @@ but also recognizes legitimate historical and virtuoso exceptions. Therefore:
 
 - crossing is a risk signal, never invalidity;
 - it cannot independently support a final recommended set; and
-- the legacy 500 ms cutoff is not treated as research-backed.
+- the raw crossing relation remains available for diagnosis;
+- audit masks accept it only when the preceding same-hand IOI is at most
+  `1000 ms`, inclusively; and
+- the `1000 ms` cap is a user-specified conservative policy, not a published
+  physical threshold.
+
+The authoritative GT contains 17 non-thumb crossing transitions. Six have
+IOI greater than `1000 ms`, and two are simultaneous chord-order relations
+with zero IOI. These examples disprove treating the raw relation as physical
+invalidity and motivate keeping long-gap crossings out of the audit mask.
 
 ### 6.3 Time-conditioned position changes
 
@@ -364,18 +377,18 @@ predicted hand and finger.
 
 | Strategy | Filter set | Hard notes | Hard % | GT recall | Precision | Assigned recall |
 |---|---|---:|---:|---:|---:|---:|
-| Blacklist | `bl_step_crossing` | 3,631 | 0.71% | 0.77% | 30.00% | 2.56% |
+| Blacklist | `bl_step_crossing` | 3,328 | 0.65% | 0.77% | 42.86% | 2.56% |
 | Blacklist | `bl_rate_q995` | 4,745 | 0.93% | 0.51% | 25.00% | 1.71% |
 | Blacklist | `bl_rate_q990` | 6,351 | 1.25% | 1.02% | 23.53% | 3.42% |
-| Blacklist | `bl_crossing` | 9,707 | 1.91% | 1.79% | 25.00% | 5.98% |
+| Blacklist | `bl_crossing` | 8,335 | 1.64% | 1.79% | 35.00% | 5.98% |
 | Blacklist | `bl_rate_q975` | 14,655 | 2.88% | 1.53% | 14.29% | 5.13% |
-| Blacklist | `bl_two_signal_strict` | 31,066 | 6.11% | 4.08% | 17.78% | 13.68% |
+| Blacklist | `bl_two_signal_strict` | 30,778 | 6.05% | 4.08% | 18.60% | 13.68% |
+| Baseline | `legacy_current_default` | 35,000 | 6.88% | 6.63% | 28.89% | 22.22% |
 | Blacklist | `bl_span_practical` | 39,443 | 7.75% | 3.32% | 9.92% | 11.11% |
 | Blacklist | `bl_practical_or_crossing` | 39,443 | 7.75% | 3.32% | 9.92% | 11.11% |
 | Hybrid | `hy_direct_plus_corroborated` | 41,928 | 8.24% | 4.08% | 11.51% | 13.68% |
 | Blacklist | `bl_practical_or_rate995` | 44,172 | 8.68% | 3.83% | 10.79% | 12.82% |
 | Hybrid | `hy_two_of_three_families` | 49,748 | 9.78% | 6.12% | 14.20% | 20.51% |
-| Legacy | `legacy_current_default` | 56,271 | 11.06% | 7.91% | 21.99% | 26.50% |
 | Hybrid | `hy_hierarchical` | 62,225 | 12.23% | 5.87% | 10.36% | 19.66% |
 | Blacklist | `bl_span_comfortable` | 69,306 | 13.63% | 5.61% | 9.44% | 18.80% |
 | Integrity | `mandatory_missing` | 74,248 | 14.60% | 70.15% | 100.00% | 0.00% |
@@ -391,11 +404,11 @@ No result is marked recommendable while the PIG gate is unavailable.
 `bl_two_signal_strict` requires at least two of four risk signals:
 
 - practical-span violation;
-- non-thumb crossing;
+- non-thumb crossing with preceding same-hand IOI at most `1000 ms`;
 - central time-conditioned position-change tail; and
 - HMM disagreement.
 
-It selects 31,066 notes (6.11%) but captures only 16 of the 392 authoritative
+It selects 30,778 notes (6.05%) but captures only 16 of the 392 authoritative
 errors:
 
 | Metric | Result |
@@ -403,7 +416,7 @@ errors:
 | All-GT exact-error recall | 4.08% |
 | 95% recording-clustered interval | 1.68%–6.71% |
 | Assigned-label error recall | 13.68% |
-| GT precision | 17.78% |
+| GT precision | 18.60% |
 
 This filter is close to the requested workload only numerically. Its error
 capture is too low and too uneven for publication use.
@@ -430,15 +443,15 @@ Six of the ten fingers have zero captured authoritative errors.
 | Predicted finger | Eligible notes | Hard notes | Selected % |
 |---|---:|---:|---:|
 | L1 | 56,961 | 1,701 | 2.99% |
-| L2 | 42,151 | 3,620 | 8.59% |
-| L3 | 32,568 | 4,035 | 12.39% |
-| L4 | 17,383 | 3,567 | 20.52% |
-| L5 | 41,112 | 4,544 | 11.05% |
+| L2 | 42,151 | 3,598 | 8.54% |
+| L3 | 32,568 | 4,025 | 12.36% |
+| L4 | 17,383 | 3,566 | 20.51% |
+| L5 | 41,112 | 4,440 | 10.80% |
 | R1 | 65,498 | 1,113 | 1.70% |
-| R2 | 58,395 | 2,733 | 4.68% |
-| R3 | 48,125 | 3,602 | 7.48% |
-| R4 | 31,856 | 3,341 | 10.49% |
-| R5 | 40,324 | 2,810 | 6.97% |
+| R2 | 58,395 | 2,693 | 4.61% |
+| R3 | 48,125 | 3,579 | 7.44% |
+| R4 | 31,856 | 3,320 | 10.42% |
+| R5 | 40,324 | 2,743 | 6.80% |
 
 The 12-fold difference between `R1` and `L4` confirms that aggregate workload
 alone is misleading.
@@ -451,8 +464,8 @@ The 74,248 missing predictions form a separate integrity problem:
 - they account for 275 of 392 GT errors (70.15%); and
 - they already exceed the entire 30,000-note target.
 
-Combining the missing-label queue with the nearest 31,066-note assigned-label
-set would require 105,314 reviews before display context. It would capture 291
+Combining the missing-label queue with the nearest 30,778-note assigned-label
+set would require 105,026 reviews before display context. It would capture 291
 of 392 GT errors (74.23%) under the current GT sample, but the workload would
 be far above the target.
 
@@ -651,10 +664,10 @@ Final verification evidence:
 The study does not support a defensible approximately 30,000-note publication
 audit queue from the currently available evidence.
 
-The 31,066-note candidate is rejected because of low and nonuniform error
+The 30,778-note candidate is rejected because of low and nonuniform error
 recall. The 39,443-note practical-span candidate is more directly grounded in
 published ergonomic research but performs even worse as an error detector.
-The legacy set is larger and still recalls only 7.91% of all GT errors.
+The 35,000-note legacy set recalls only 6.63% of all GT errors.
 
 Publication should wait until missing labels and the PIG gate are resolved.
 Any later recommendation must be selected from validity-gated, out-of-fold
@@ -2562,16 +2575,16 @@ independent final review and fresh controller verification.
 
 ## Complete authoritative generated tables
 
-These inline TSV tables are copied verbatim from the validated run CSVs. `NA` is the generated missing-value semantics; no PIG-derived validity is inferred.
+These inline CSV tables are copied verbatim from the validated run snapshots. `NA` is the generated missing-value semantics; no PIG-derived validity is inferred.
 
 ### Physical candidates, enabled must-alerts, and integrity rows (exact generated values)
 
-```tsv
+```csv
 strategy,set_id,evidence_grade,threshold_summary,pig_status,recommendable,hard_count,hard_percentage_all_notes,hard_percentage_assigned_notes,gt_eligible_notes,gt_hard_count,gt_hard_percentage,gt_error_count,gt_selected_errors,gt_error_recall,gt_precision,gt_correct_sieve_rate,gt_enrichment,assigned_gt_error_recall,assigned_gt_precision,macro_finger_recall,worst_finger,cluster_count,replicates,error_recall_ci_low,error_recall_ci_high,precision_ci_low,precision_ci_high
-blacklist,bl_step_crossing,exploratory,crossing and <=2 semitones,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,3631,0.0071389108982916555,0.008359175178936076,1800,10,0.005555555555555556,392,3,0.007653061224489796,0.3,0.004971590909090909,1.3775510204081634,0.02564102564102564,0.3,0.004545454545454545,L1,11,2000,0.0,0.015625,0.0,0.5454545454545454
+blacklist,bl_step_crossing,exploratory,"crossing, IOI <=1000ms, and <=2 semitones","unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,3328,0.006543182448227659,0.00766161801032753,1800,7,0.0038888888888888888,392,3,0.007653061224489796,0.42857142857142855,0.002840909090909091,1.967930029154519,0.02564102564102564,0.42857142857142855,0.004545454545454545,L1,11,2000,0.0,0.015625,0.0,0.8
 blacklist,bl_rate_q995,empirically_calibrated,LOPO 99.5th percentile,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,4745,0.009329146850012092,0.010923791303787298,1800,8,0.0044444444444444444,392,2,0.00510204081632653,0.25,0.004261363636363636,1.1479591836734695,0.017094017094017096,0.25,0.004015151515151515,L1,11,2000,0.0,0.01054889463362453,0.0,1.0
 blacklist,bl_rate_q990,empirically_calibrated,LOPO 99th percentile,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,6351,0.0124867042454008,0.014621074514299922,1800,17,0.009444444444444445,392,4,0.01020408163265306,0.23529411764705882,0.009232954545454546,1.0804321728691477,0.03418803418803419,0.23529411764705882,0.010165945165945166,L1,11,2000,0.0,0.01815256525652565,0.0,0.4375
-blacklist,bl_crossing,research_supported_corroboration_required,non-thumb crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,9707,0.019084937507495757,0.022347153253079725,1800,28,0.015555555555555555,392,7,0.017857142857142856,0.25,0.014914772727272728,1.1479591836734695,0.05982905982905983,0.25,0.010227272727272727,L1,11,2000,0.00443337417823939,0.032573493995575256,0.06666666666666667,0.4375
+blacklist,bl_crossing,mixed,non-thumb crossing and IOI <=1000ms,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,8335,0.016387447627998056,0.019188577558918257,1800,20,0.011111111111111112,392,7,0.017857142857142856,0.35,0.009232954545454546,1.6071428571428572,0.05982905982905983,0.35,0.010227272727272727,L1,11,2000,0.00443337417823939,0.032573493995575256,0.125,0.5714285714285714
 blacklist,bl_rate_q975,empirically_calibrated,LOPO 97.5th percentile,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,14655,0.028813202758045775,0.03373828483814602,1800,42,0.023333333333333334,392,6,0.015306122448979591,0.14285714285714285,0.02556818181818182,0.6559766763848397,0.05128205128205128,0.14285714285714285,0.020358252858252858,L1,11,2000,0.0034129692832764505,0.02616504551257145,0.047619047619047616,0.2631578947368421
 blacklist,bl_span_practical,research_supported,Parncutt MaxPrac,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,39443,0.07754890183456838,0.09080444686939566,1800,131,0.07277777777777777,392,13,0.03316326530612245,0.09923664122137404,0.08380681818181818,0.4556784545879421,0.1111111111111111,0.09923664122137404,0.022687400318979263,L1,11,2000,0.014180910829548171,0.05699580369983648,0.04346657316503039,0.16842739378566896
 blacklist,bl_span_comfortable,research_supported,Parncutt MaxComf,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",False,69306,0.1362625609245391,0.15955411593262012,1800,233,0.12944444444444445,392,22,0.05612244897959184,0.0944206008583691,0.14985795454545456,0.43356398353332753,0.18803418803418803,0.0944206008583691,0.04116142629300524,L1,11,2000,0.02958507010231148,0.08602614015572857,0.051998701298701294,0.13526641091219094
@@ -2582,7 +2595,7 @@ integrity,mandatory_missing,physical_invariant,schema completeness,"unavailable:
 
 ### Every fixed and calibrated Noinfo variant (exact generated values)
 
-```tsv
+```csv
 calibration,variant,min_run,radius,window,quantile,held_out_recording,threshold,train_nonzero_notes,hard_count,hard_percentage_all_notes,hard_percentage_assigned_notes,gt_error_recall,assigned_gt_error_recall,gt_precision,assigned_gt_precision,error_enrichment,incremental_count_beyond_physical,incremental_errors_beyond_physical
 fixed,ni_k2_r1,2.0,1.0,,,,,,21651,0.042568041822889736,0.04984425827572156,0.015306122448979591,0.05128205128205128,0.08450704225352113,0.08450704225352113,0.38804254096004603,21651,6
 fixed,ni_k2_r2,2.0,2.0,,,,,,40529,0.0796840869724215,0.09330460226579461,0.03571428571428571,0.11965811965811966,0.109375,0.109375,0.5022321428571429,40529,14
@@ -2696,7 +2709,7 @@ training_fold,ni_w17_q975,,,17.0,0.975,2024-09-05_13-25-10,0.47058823529411764,1
 
 ### All 189 strategy × fixed-Noinfo combinations (GT/assigned recall, precision, enrichment, incremental contribution, and method columns)
 
-```tsv
+```csv
 set_id,noinfo_variant,noinfo_calibration,noinfo_window,noinfo_quantile,gt_hard_count,base_risk_method,physical_policy_status,noinfo_min_run,noinfo_context_radius,hard_count,hard_percentage_all_notes,gt_error_recall,assigned_gt_error_recall,gt_precision,error_enrichment,incremental_count_beyond_physical,incremental_errors_beyond_physical
 legacy_current_default__ni_k3_r1,ni_k3_r1,fixed,,,90,legacy_current_default,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,35000,0.06881351733412501,0.0663265306122449,0.2222222222222222,0.28888888888888886,1.3265306122448979,35000,26
 legacy_current_default__ni_k3_r2,ni_k3_r2,fixed,,,90,legacy_current_default,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,35000,0.06881351733412501,0.0663265306122449,0.2222222222222222,0.28888888888888886,1.3265306122448979,35000,26
@@ -2707,53 +2720,53 @@ legacy_current_default__ni_k3_r4,ni_k3_r4,fixed,,,116,legacy_current_default,"un
 legacy_current_default__ni_k2_r1,ni_k2_r1,fixed,,,139,legacy_current_default,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,49431,0.09718631358123239,0.07397959183673469,0.24786324786324787,0.20863309352517986,0.9580091029217443,49431,29
 legacy_current_default__ni_k2_r2,ni_k2_r2,fixed,,,180,legacy_current_default,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,62762,0.12339639928355298,0.08418367346938775,0.28205128205128205,0.18333333333333332,0.8418367346938775,62762,33
 legacy_current_default__ni_k2_r4,ni_k2_r4,fixed,,,270,legacy_current_default,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,92261,0.1813943977932488,0.09438775510204081,0.3162393162393162,0.13703703703703704,0.6292517006802721,92261,37
-bl_step_crossing__ni_k5_r1,ni_k5_r1,fixed,,,10,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,4200,0.008257622080095003,0.007653061224489796,0.02564102564102564,0.3,1.3775510204081634,4200,3
-bl_step_crossing__ni_k5_r2,ni_k5_r2,fixed,,,10,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,4761,0.009360604457936263,0.007653061224489796,0.02564102564102564,0.3,1.3775510204081634,4761,3
+bl_step_crossing__ni_k5_r1,ni_k5_r1,fixed,,,7,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,3899,0.007665825831021527,0.007653061224489796,0.02564102564102564,0.42857142857142855,1.967930029154519,3899,3
+bl_step_crossing__ni_k5_r2,ni_k5_r2,fixed,,,7,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,4461,0.008770774309358048,0.007653061224489796,0.02564102564102564,0.42857142857142855,1.967930029154519,4461,3
 bl_rate_q995__ni_k5_r1,ni_k5_r1,fixed,,,8,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,5323,0.010465552936272784,0.00510204081632653,0.017094017094017096,0.25,1.1479591836734695,5323,2
-bl_step_crossing__ni_k5_r4,ni_k5_r4,fixed,,,10,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,5839,0.011480060791827314,0.007653061224489796,0.02564102564102564,0.3,1.3775510204081634,5839,3
+bl_step_crossing__ni_k5_r4,ni_k5_r4,fixed,,,7,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,5543,0.010898095045230143,0.007653061224489796,0.02564102564102564,0.42857142857142855,1.967930029154519,5543,3
 bl_rate_q995__ni_k5_r2,ni_k5_r2,fixed,,,8,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,5887,0.011574433615599828,0.00510204081632653,0.017094017094017096,0.25,1.1479591836734695,5887,2
 bl_rate_q990__ni_k5_r1,ni_k5_r1,fixed,,,17,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,6928,0.013621144231166232,0.01020408163265306,0.03418803418803419,0.23529411764705882,1.0804321728691477,6928,4
 bl_rate_q995__ni_k5_r4,ni_k5_r4,fixed,,,8,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,6972,0.013707652652957703,0.00510204081632653,0.017094017094017096,0.25,1.1479591836734695,6972,2
 bl_rate_q990__ni_k5_r2,ni_k5_r2,fixed,,,17,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,7492,0.014730024910493276,0.01020408163265306,0.03418803418803419,0.23529411764705882,1.0804321728691477,7492,4
 bl_rate_q990__ni_k5_r4,ni_k5_r4,fixed,,,17,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,8572,0.016853413445374846,0.01020408163265306,0.03418803418803419,0.23529411764705882,1.0804321728691477,8572,4
-bl_step_crossing__ni_k3_r1,ni_k3_r1,fixed,,,25,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,8955,0.0176064299350597,0.01020408163265306,0.03418803418803419,0.16,0.7346938775510204,8955,4
+bl_step_crossing__ni_k3_r1,ni_k3_r1,fixed,,,22,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,8661,0.01702839638945305,0.01020408163265306,0.03418803418803419,0.18181818181818182,0.8348794063079779,8661,4
+bl_crossing__ni_k5_r1,ni_k5_r1,fixed,,,20,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,8877,0.017453074096429363,0.017857142857142856,0.05982905982905983,0.35,1.6071428571428572,8877,7
+bl_crossing__ni_k5_r2,ni_k5_r2,fixed,,,20,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,9425,0.018530497167832238,0.017857142857142856,0.05982905982905983,0.35,1.6071428571428572,9425,7
 bl_rate_q995__ni_k3_r1,ni_k3_r1,fixed,,,25,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,10101,0.01985958110262848,0.01020408163265306,0.03418803418803419,0.16,0.7346938775510204,10101,4
-bl_crossing__ni_k5_r1,ni_k5_r1,fixed,,,28,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,10238,0.0201289368704792,0.017857142857142856,0.05982905982905983,0.25,1.1479591836734695,10238,7
-bl_crossing__ni_k5_r2,ni_k5_r2,fixed,,,28,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,10777,0.021188665037424722,0.017857142857142856,0.05982905982905983,0.25,1.1479591836734695,10777,7
+bl_crossing__ni_k5_r4,ni_k5_r4,fixed,,,20,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,10475,0.020594902687855986,0.017857142857142856,0.05982905982905983,0.35,1.6071428571428572,10475,7
 bl_rate_q990__ni_k3_r1,ni_k3_r1,fixed,,,33,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,11690,0.022983714789597754,0.015306122448979591,0.05128205128205128,0.18181818181818182,0.8348794063079779,11690,6
-bl_crossing__ni_k5_r4,ni_k5_r4,fixed,,,28,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,11818,0.023235375652991126,0.017857142857142856,0.05982905982905983,0.25,1.1479591836734695,11818,7
-bl_step_crossing__ni_k3_r2,ni_k3_r2,fixed,,,40,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,13963,0.02745266121532536,0.015306122448979591,0.05128205128205128,0.15,0.6887755102040817,13963,6
-bl_crossing__ni_k3_r1,ni_k3_r1,fixed,,,43,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,14818,0.02913367713877327,0.02040816326530612,0.06837606837606838,0.18604651162790697,0.8542952064546749,14818,8
+bl_crossing__ni_k3_r1,ni_k3_r1,fixed,,,35,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,13482,0.026506966877104958,0.02040816326530612,0.06837606837606838,0.22857142857142856,1.0495626822157436,13482,8
+bl_step_crossing__ni_k3_r2,ni_k3_r2,fixed,,,37,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,13680,0.026896254775166578,0.015306122448979591,0.05128205128205128,0.16216216216216217,0.7446221731936018,13680,6
 bl_rate_q995__ni_k3_r2,ni_k3_r2,fixed,,,41,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,15115,0.029717608985865705,0.017857142857142856,0.05982905982905983,0.17073170731707318,0.7839721254355402,15115,7
 bl_rate_q975__ni_k5_r1,ni_k5_r1,fixed,,,42,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,15225,0.029933880040344384,0.015306122448979591,0.05128205128205128,0.14285714285714285,0.6559766763848397,15225,6
 bl_rate_q975__ni_k5_r2,ni_k5_r2,fixed,,,42,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,15774,0.031013269212242515,0.015306122448979591,0.05128205128205128,0.14285714285714285,0.6559766763848397,15774,6
 bl_rate_q990__ni_k3_r2,ni_k3_r2,fixed,,,49,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,16685,0.03280438676342502,0.02295918367346939,0.07692307692307693,0.1836734693877551,0.8433985839233653,16685,9
 bl_rate_q975__ni_k5_r4,ni_k5_r4,fixed,,,42,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,16831,0.03309143743573309,0.015306122448979591,0.05128205128205128,0.14285714285714285,0.6559766763848397,16831,6
-bl_crossing__ni_k3_r2,ni_k3_r2,fixed,,,58,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,19674,0.0386810611437593,0.025510204081632654,0.08547008547008547,0.1724137931034483,0.7916959887403238,19674,10
+bl_crossing__ni_k3_r2,ni_k3_r2,fixed,,,50,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,18383,0.03614282540437772,0.025510204081632654,0.08547008547008547,0.2,0.9183673469387756,18383,10
 bl_rate_q975__ni_k3_r1,ni_k3_r1,fixed,,,58,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,19925,0.03917455236806974,0.02040816326530612,0.06837606837606838,0.13793103448275862,0.6333567909922591,19925,8
-bl_step_crossing__ni_k3_r4,ni_k3_r4,fixed,,,71,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,23216,0.04564498909797275,0.025510204081632654,0.08547008547008547,0.14084507042253522,0.6467375682667433,23216,10
+bl_step_crossing__ni_k3_r4,ni_k3_r4,fixed,,,68,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,22944,0.04511020976326184,0.025510204081632654,0.08547008547008547,0.14705882352941177,0.6752701080432173,22944,10
 bl_rate_q995__ni_k3_r4,ni_k3_r4,fixed,,,72,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,24316,0.04780769964275954,0.02806122448979592,0.09401709401709402,0.1527777777777778,0.7015306122448981,24316,11
+bl_step_crossing__ni_k2_r1,ni_k2_r1,fixed,,,75,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,24746,0.048653122855721646,0.02040816326530612,0.06837606837606838,0.10666666666666667,0.489795918367347,24746,8
 bl_rate_q975__ni_k3_r2,ni_k3_r2,fixed,,,74,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,24806,0.04877108888543729,0.02806122448979592,0.09401709401709402,0.14864864864864866,0.6825703254274683,24806,11
-bl_step_crossing__ni_k2_r1,ni_k2_r1,fixed,,,77,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,25019,0.04918986829092782,0.02040816326530612,0.06837606837606838,0.1038961038961039,0.47707394646170165,25019,8
 bl_rate_q990__ni_k3_r4,ni_k3_r4,fixed,,,80,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,25826,0.05077651139060322,0.03316326530612245,0.1111111111111111,0.1625,0.7461734693877552,25826,13
 bl_rate_q995__ni_k2_r1,ni_k2_r1,fixed,,,79,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,26248,0.05160620579960324,0.02040816326530612,0.06837606837606838,0.10126582278481013,0.46499612503229143,26248,8
+bl_crossing__ni_k3_r4,ni_k3_r4,fixed,,,81,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,27474,0.054016645006792874,0.03571428571428571,0.11965811965811966,0.1728395061728395,0.7936507936507936,27474,14
 bl_rate_q990__ni_k2_r1,ni_k2_r1,fixed,,,87,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,27794,0.0546457971652763,0.025510204081632654,0.08547008547008547,0.11494252873563218,0.5277973258268825,27794,10
-bl_crossing__ni_k3_r4,ni_k3_r4,fixed,,,89,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,28716,0.05645854182190668,0.03571428571428571,0.11965811965811966,0.15730337078651685,0.7223113964686999,28716,14
-bl_crossing__ni_k2_r1,ni_k2_r1,fixed,,,95,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,30453,0.059873658382174545,0.030612244897959183,0.10256410256410256,0.12631578947368421,0.5800214822771215,30453,12
-bl_two_signal_strict__ni_k5_r1,ni_k5_r1,fixed,,,90,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,31515,0.06196165710814142,0.04081632653061224,0.13675213675213677,0.17777777777777778,0.816326530612245,31515,16
-bl_two_signal_strict__ni_k5_r2,ni_k5_r2,fixed,,,90,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,32015,0.06294470735577179,0.04081632653061224,0.13675213675213677,0.17777777777777778,0.816326530612245,32015,16
-bl_two_signal_strict__ni_k5_r4,ni_k5_r4,fixed,,,90,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,32961,0.06480463842428842,0.04081632653061224,0.13675213675213677,0.17777777777777778,0.816326530612245,32961,16
+bl_crossing__ni_k2_r1,ni_k2_r1,fixed,,,88,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,29215,0.05743962596904178,0.030612244897959183,0.10256410256410256,0.13636363636363635,0.6261595547309833,29215,12
+bl_two_signal_strict__ni_k5_r1,ni_k5_r1,fixed,,,86,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,31231,0.061403284567487386,0.04081632653061224,0.13675213675213677,0.18604651162790697,0.8542952064546749,31231,16
+bl_two_signal_strict__ni_k5_r2,ni_k5_r2,fixed,,,86,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,31733,0.06239026701610826,0.04081632653061224,0.13675213675213677,0.18604651162790697,0.8542952064546749,31733,16
+bl_two_signal_strict__ni_k5_r4,ni_k5_r4,fixed,,,86,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,32681,0.06425413028561541,0.04081632653061224,0.13675213675213677,0.18604651162790697,0.8542952064546749,32681,16
 bl_rate_q975__ni_k3_r4,ni_k3_r4,fixed,,,103,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,33699,0.06625562058979083,0.03826530612244898,0.1282051282051282,0.14563106796116504,0.6687140875767783,33699,15
-bl_two_signal_strict__ni_k3_r1,ni_k3_r1,fixed,,,104,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,35656,0.07010327925901605,0.04336734693877551,0.1452991452991453,0.16346153846153846,0.7505886970172685,35656,17
+bl_two_signal_strict__ni_k3_r1,ni_k3_r1,fixed,,,100,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,35380,0.06956063552232408,0.04336734693877551,0.1452991452991453,0.17,0.7806122448979593,35380,17
 bl_rate_q975__ni_k2_r1,ni_k2_r1,fixed,,,112,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,35876,0.0705358213679734,0.030612244897959183,0.10256410256410256,0.10714285714285714,0.49198250728862974,35876,12
 bl_practical_or_crossing__ni_k5_r1,ni_k5_r1,fixed,,,131,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,39866,0.07838056234406365,0.03316326530612245,0.1111111111111111,0.09923664122137404,0.4556784545879421,39866,13
 bl_span_practical__ni_k5_r1,ni_k5_r1,fixed,,,131,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,39866,0.07838056234406365,0.03316326530612245,0.1111111111111111,0.09923664122137404,0.4556784545879421,39866,13
-bl_two_signal_strict__ni_k3_r2,ni_k3_r2,fixed,,,119,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,40149,0.07893696878422243,0.04846938775510204,0.1623931623931624,0.15966386554621848,0.7331504030183502,40149,19
+bl_two_signal_strict__ni_k3_r2,ni_k3_r2,fixed,,,115,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,39879,0.07840612165050205,0.04846938775510204,0.1623931623931624,0.16521739130434782,0.7586512866015972,39879,19
 bl_practical_or_crossing__ni_k5_r2,ni_k5_r2,fixed,,,131,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,40336,0.07930462957683619,0.03316326530612245,0.1111111111111111,0.09923664122137404,0.4556784545879421,40336,13
 bl_span_practical__ni_k5_r2,ni_k5_r2,fixed,,,131,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,40336,0.07930462957683619,0.03316326530612245,0.1111111111111111,0.09923664122137404,0.4556784545879421,40336,13
 bl_practical_or_crossing__ni_k5_r4,ni_k5_r4,fixed,,,131,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,41247,0.0810957471280187,0.03316326530612245,0.1111111111111111,0.09923664122137404,0.4556784545879421,41247,13
 bl_span_practical__ni_k5_r4,ni_k5_r4,fixed,,,131,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,41247,0.0810957471280187,0.03316326530612245,0.1111111111111111,0.09923664122137404,0.4556784545879421,41247,13
-bl_step_crossing__ni_k2_r2,ni_k2_r2,fixed,,,133,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,43719,0.0859559475523032,0.03826530612244898,0.1282051282051282,0.11278195488721804,0.5178763234617155,43719,15
+bl_step_crossing__ni_k2_r2,ni_k2_r2,fixed,,,131,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,43463,0.08545262582551645,0.03826530612244898,0.1282051282051282,0.11450381679389313,0.5257828322168562,43463,15
 bl_practical_or_crossing__ni_k3_r1,ni_k3_r1,fixed,,,146,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,43832,0.08617811690826765,0.03571428571428571,0.11965811965811966,0.0958904109589041,0.44031311154598823,43832,14
 bl_span_practical__ni_k3_r1,ni_k3_r1,fixed,,,146,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,43832,0.08617811690826765,0.03571428571428571,0.11965811965811966,0.0958904109589041,0.44031311154598823,43832,14
 bl_practical_or_rate995__ni_k5_r1,ni_k5_r1,fixed,,,139,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,44593,0.08767431938516106,0.03826530612244898,0.1282051282051282,0.1079136690647482,0.4955219497871091,44593,15
@@ -2761,12 +2774,12 @@ bl_rate_q995__ni_k2_r2,ni_k2_r2,fixed,,,135,bl_rate_q995,"unavailable: PIG v1.02
 bl_practical_or_rate995__ni_k5_r2,ni_k5_r2,fixed,,,139,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,45058,0.08858855611545728,0.03826530612244898,0.1282051282051282,0.1079136690647482,0.4955219497871091,45058,15
 bl_practical_or_rate995__ni_k5_r4,ni_k5_r4,fixed,,,139,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,45956,0.09035411436020141,0.03826530612244898,0.1282051282051282,0.1079136690647482,0.4955219497871091,45956,15
 bl_rate_q990__ni_k2_r2,ni_k2_r2,fixed,,,143,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,46320,0.09106977494047631,0.04336734693877551,0.1452991452991453,0.11888111888111888,0.5458826887398316,46320,17
+bl_crossing__ni_k2_r2,ni_k2_r2,fixed,,,144,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,47595,0.09357655307193372,0.04846938775510204,0.1623931623931624,0.13194444444444445,0.6058673469387755,47595,19
 bl_practical_or_crossing__ni_k3_r2,ni_k3_r2,fixed,,,161,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,48172,0.09471099305769914,0.04081632653061224,0.13675213675213677,0.09937888198757763,0.4563316009633667,48172,16
 bl_span_practical__ni_k3_r2,ni_k3_r2,fixed,,,161,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,48172,0.09471099305769914,0.04081632653061224,0.13675213675213677,0.09937888198757763,0.4563316009633667,48172,16
-bl_two_signal_strict__ni_k3_r4,ni_k3_r4,fixed,,,148,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,48510,0.09537553502509727,0.058673469387755105,0.19658119658119658,0.1554054054054054,0.713596249310535,48510,23
+bl_two_signal_strict__ni_k3_r4,ni_k3_r4,fixed,,,144,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,48248,0.09486041669533897,0.058673469387755105,0.19658119658119658,0.1597222222222222,0.7334183673469388,48248,23
 bl_practical_or_rate995__ni_k3_r1,ni_k3_r1,fixed,,,154,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,48522,0.0953991282310404,0.04081632653061224,0.13675213675213677,0.1038961038961039,0.47707394646170165,48522,16
-bl_crossing__ni_k2_r2,ni_k2_r2,fixed,,,151,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,48744,0.09583560254098827,0.04846938775510204,0.1623931623931624,0.12582781456953643,0.5777807811866469,48744,19
-bl_two_signal_strict__ni_k2_r1,ni_k2_r1,fixed,,,152,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,49999,0.09830305866254048,0.05357142857142857,0.1794871794871795,0.13815789473684212,0.6343984962406016,49999,21
+bl_two_signal_strict__ni_k2_r1,ni_k2_r1,fixed,,,149,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,49742,0.09779777083525848,0.05357142857142857,0.1794871794871795,0.14093959731543623,0.6471716203259827,49742,21
 bl_practical_or_rate995__ni_k3_r2,ni_k3_r2,fixed,,,169,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,52797,0.10380420784827996,0.04591836734693878,0.15384615384615385,0.10650887573964497,0.48907136819224734,52797,18
 bl_rate_q975__ni_k2_r2,ni_k2_r2,fixed,,,167,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,53954,0.1060789861212966,0.04846938775510204,0.1623931623931624,0.11377245508982035,0.5224245386777465,53954,19
 bl_practical_or_crossing__ni_k3_r4,ni_k3_r4,fixed,,,188,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,56320,0.11073077989308346,0.05102040816326531,0.17094017094017094,0.10638297872340426,0.4884932696482849,56320,20
@@ -2775,23 +2788,23 @@ bl_practical_or_crossing__ni_k2_r1,ni_k2_r1,fixed,,,194,bl_practical_or_crossing
 bl_span_practical__ni_k2_r1,ni_k2_r1,fixed,,,194,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,57632,0.1133103037428655,0.04591836734693878,0.15384615384615385,0.09278350515463918,0.4260467073427309,57632,18
 bl_practical_or_rate995__ni_k3_r4,ni_k3_r4,fixed,,,196,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,60798,0.11953497791086093,0.05612244897959184,0.18803418803418803,0.11224489795918367,0.5154102457309455,60798,22
 bl_practical_or_rate995__ni_k2_r1,ni_k2_r1,fixed,,,202,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,62215,0.12232094231264537,0.05102040816326531,0.17094017094017094,0.09900990099009901,0.4546373004647404,62215,20
-bl_two_signal_strict__ni_k2_r2,ni_k2_r2,fixed,,,202,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,67000,0.1317287331824679,0.0663265306122449,0.2222222222222222,0.12871287128712872,0.5910284906041625,67000,26
+bl_two_signal_strict__ni_k2_r2,ni_k2_r2,fixed,,,199,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,66764,0.13126473346558637,0.0663265306122449,0.2222222222222222,0.1306532663316583,0.5999384678494514,66764,26
 bl_span_comfortable__ni_k5_r1,ni_k5_r1,fixed,,,233,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,1.0,69681,0.13699984861026188,0.05612244897959184,0.18803418803418803,0.0944206008583691,0.43356398353332753,69681,22
 bl_span_comfortable__ni_k5_r2,ni_k5_r2,fixed,,,233,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,2.0,70113,0.1378492040242145,0.05612244897959184,0.18803418803418803,0.0944206008583691,0.43356398353332753,70113,22
 bl_span_comfortable__ni_k5_r4,ni_k5_r4,fixed,,,233,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",5.0,4.0,70939,0.13947320303329985,0.05612244897959184,0.18803418803418803,0.0944206008583691,0.43356398353332753,70939,22
 bl_span_comfortable__ni_k3_r1,ni_k3_r1,fixed,,,247,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,1.0,73246,0.14400899687586632,0.058673469387755105,0.19658119658119658,0.0931174089068826,0.4275799388581344,73246,23
 bl_practical_or_crossing__ni_k2_r2,ni_k2_r2,fixed,,,243,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,74172,0.14582960593447775,0.061224489795918366,0.20512820512820512,0.09876543209876543,0.45351473922902497,74172,24
 bl_span_practical__ni_k2_r2,ni_k2_r2,fixed,,,243,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,74172,0.14582960593447775,0.061224489795918366,0.20512820512820512,0.09876543209876543,0.45351473922902497,74172,24
-bl_step_crossing__ni_k2_r4,ni_k2_r4,fixed,,,228,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,75274,0.14799624868025504,0.05612244897959184,0.18803418803418803,0.09649122807017543,0.4430719656283566,75274,22
+bl_step_crossing__ni_k2_r4,ni_k2_r4,fixed,,,227,bl_step_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,75055,0.14756567267179294,0.05612244897959184,0.18803418803418803,0.09691629955947137,0.4450238245077767,75055,22
 bl_rate_q995__ni_k2_r4,ni_k2_r4,fixed,,,231,bl_rate_q995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,76243,0.14990140006016267,0.05612244897959184,0.18803418803418803,0.09523809523809523,0.43731778425655976,76243,22
 bl_span_comfortable__ni_k3_r2,ni_k3_r2,fixed,,,261,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,2.0,77152,0.15168858541035465,0.06377551020408163,0.21367521367521367,0.09578544061302682,0.43983110485573546,77152,25
 bl_rate_q990__ni_k2_r4,ni_k2_r4,fixed,,,237,bl_rate_q990,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,77544,0.15245929680449685,0.061224489795918366,0.20512820512820512,0.10126582278481013,0.46499612503229143,77544,24
 bl_practical_or_rate995__ni_k2_r2,ni_k2_r2,fixed,,,250,bl_practical_or_rate995,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,78497,0.15433299057648034,0.06377551020408163,0.21367521367521367,0.1,0.4591836734693878,78497,25
-bl_crossing__ni_k2_r4,ni_k2_r4,fixed,,,246,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,79680,0.15665888746237375,0.0663265306122449,0.2222222222222222,0.10569105691056911,0.4853160776505725,79680,26
+bl_crossing__ni_k2_r4,ni_k2_r4,fixed,,,240,bl_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,78673,0.15467902426364621,0.0663265306122449,0.2222222222222222,0.10833333333333334,0.49744897959183676,78673,26
 bl_rate_q975__ni_k2_r4,ni_k2_r4,fixed,,,259,bl_rate_q975,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,84414,0.16596640720693798,0.0663265306122449,0.2222222222222222,0.10038610038610038,0.460956583405563,84414,26
 bl_span_comfortable__ni_k3_r4,ni_k3_r4,fixed,,,286,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",3.0,4.0,84448,0.16603325462377683,0.07397959183673469,0.24786324786324787,0.10139860139860139,0.4656058227486799,84448,29
 bl_span_comfortable__ni_k2_r1,ni_k2_r1,fixed,,,292,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,1.0,85613,0.16832376170075558,0.0663265306122449,0.2222222222222222,0.08904109589041095,0.4088621750069891,85613,26
-bl_two_signal_strict__ni_k2_r4,ni_k2_r4,fixed,,,289,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,95958,0.18866307132422766,0.08163265306122448,0.27350427350427353,0.11072664359861592,0.5084386695854813,95958,32
+bl_two_signal_strict__ni_k2_r4,ni_k2_r4,fixed,,,286,bl_two_signal_strict,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,95746,0.1882462580192324,0.08163265306122448,0.27350427350427353,0.11188811188811189,0.513771942343371,95746,32
 bl_span_comfortable__ni_k2_r2,ni_k2_r2,fixed,,,338,bl_span_comfortable,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,2.0,100508,0.19760882857766393,0.08163265306122448,0.27350427350427353,0.09467455621301775,0.4347301050597754,100508,32
 bl_practical_or_crossing__ni_k2_r4,ni_k2_r4,fixed,,,328,bl_practical_or_crossing,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,102481,0.2014879448548133,0.07653061224489796,0.2564102564102564,0.09146341463414634,0.41998506719761075,102481,30
 bl_span_practical__ni_k2_r4,ni_k2_r4,fixed,,,328,bl_span_practical,"unavailable: PIG v1.02 annotations are distributed by the official authors upon request; no checksum-verifiable unattended download is published. Searched: /tmp/pianovam-audit-260724.djnuaa/PIG, /workspace/PIG. The strict validity gate remains closed.",2.0,4.0,102481,0.2014879448548133,0.07653061224489796,0.2564102564102564,0.09146341463414634,0.41998506719761075,102481,30
@@ -2891,7 +2904,7 @@ wl_strict_obvious__ni_k2_r4,ni_k2_r4,fixed,,,1274,wl_strict_obvious,"unavailable
 
 ### True/all-GT per-finger table (all ten fingers)
 
-```tsv
+```csv
 set_id,finger_id,gt_notes,errors,selected_notes,selected_errors,error_recall,precision,scope
 mandatory_missing,L1,252,45,35,35,0.7777777777777778,1.0,all_gt
 mandatory_missing,L2,207,25,19,19,0.76,1.0,all_gt
@@ -2994,45 +3007,45 @@ bl_span_relative,R3,146,7,55,5,0.7142857142857143,0.09090909090909091,assigned_g
 bl_span_relative,R4,118,22,45,12,0.5454545454545454,0.26666666666666666,assigned_gt
 bl_span_relative,R5,134,27,75,12,0.4444444444444444,0.16,assigned_gt
 bl_crossing,L1,252,45,0,0,0.0,,all_gt
-bl_crossing,L2,207,25,2,0,0.0,0.0,all_gt
-bl_crossing,L3,110,20,2,0,0.0,0.0,all_gt
-bl_crossing,L4,38,13,2,0,0.0,0.0,all_gt
-bl_crossing,L5,279,72,7,3,0.041666666666666664,0.42857142857142855,all_gt
+bl_crossing,L2,207,25,1,0,0.0,0.0,all_gt
+bl_crossing,L3,110,20,1,0,0.0,0.0,all_gt
+bl_crossing,L4,38,13,1,0,0.0,0.0,all_gt
+bl_crossing,L5,279,72,6,3,0.041666666666666664,0.5,all_gt
 bl_crossing,R1,252,71,0,0,0.0,,all_gt
-bl_crossing,R2,193,19,2,0,0.0,0.0,all_gt
+bl_crossing,R2,193,19,0,0,0.0,,all_gt
 bl_crossing,R3,160,21,2,0,0.0,0.0,all_gt
 bl_crossing,R4,136,40,3,0,0.0,0.0,all_gt
-bl_crossing,R5,173,66,8,4,0.06060606060606061,0.5,all_gt
+bl_crossing,R5,173,66,6,4,0.06060606060606061,0.6666666666666666,all_gt
 bl_crossing,L1,217,10,0,0,0.0,,assigned_gt
-bl_crossing,L2,188,6,2,0,0.0,0.0,assigned_gt
-bl_crossing,L3,95,5,2,0,0.0,0.0,assigned_gt
-bl_crossing,L4,30,5,2,0,0.0,0.0,assigned_gt
-bl_crossing,L5,225,18,7,3,0.16666666666666666,0.42857142857142855,assigned_gt
+bl_crossing,L2,188,6,1,0,0.0,0.0,assigned_gt
+bl_crossing,L3,95,5,1,0,0.0,0.0,assigned_gt
+bl_crossing,L4,30,5,1,0,0.0,0.0,assigned_gt
+bl_crossing,L5,225,18,6,3,0.16666666666666666,0.5,assigned_gt
 bl_crossing,R1,190,9,0,0,0.0,,assigned_gt
-bl_crossing,R2,182,8,2,0,0.0,0.0,assigned_gt
+bl_crossing,R2,182,8,0,0,0.0,,assigned_gt
 bl_crossing,R3,146,7,2,0,0.0,0.0,assigned_gt
 bl_crossing,R4,118,22,3,0,0.0,0.0,assigned_gt
-bl_crossing,R5,134,27,8,4,0.14814814814814814,0.5,assigned_gt
+bl_crossing,R5,134,27,6,4,0.14814814814814814,0.6666666666666666,assigned_gt
 bl_step_crossing,L1,252,45,0,0,0.0,,all_gt
 bl_step_crossing,L2,207,25,0,0,0.0,,all_gt
-bl_step_crossing,L3,110,20,2,0,0.0,0.0,all_gt
+bl_step_crossing,L3,110,20,1,0,0.0,0.0,all_gt
 bl_step_crossing,L4,38,13,0,0,0.0,,all_gt
 bl_step_crossing,L5,279,72,0,0,0.0,,all_gt
 bl_step_crossing,R1,252,71,0,0,0.0,,all_gt
-bl_step_crossing,R2,193,19,1,0,0.0,0.0,all_gt
+bl_step_crossing,R2,193,19,0,0,0.0,,all_gt
 bl_step_crossing,R3,160,21,1,0,0.0,0.0,all_gt
 bl_step_crossing,R4,136,40,1,0,0.0,0.0,all_gt
-bl_step_crossing,R5,173,66,5,3,0.045454545454545456,0.6,all_gt
+bl_step_crossing,R5,173,66,4,3,0.045454545454545456,0.75,all_gt
 bl_step_crossing,L1,217,10,0,0,0.0,,assigned_gt
 bl_step_crossing,L2,188,6,0,0,0.0,,assigned_gt
-bl_step_crossing,L3,95,5,2,0,0.0,0.0,assigned_gt
+bl_step_crossing,L3,95,5,1,0,0.0,0.0,assigned_gt
 bl_step_crossing,L4,30,5,0,0,0.0,,assigned_gt
 bl_step_crossing,L5,225,18,0,0,0.0,,assigned_gt
 bl_step_crossing,R1,190,9,0,0,0.0,,assigned_gt
-bl_step_crossing,R2,182,8,1,0,0.0,0.0,assigned_gt
+bl_step_crossing,R2,182,8,0,0,0.0,,assigned_gt
 bl_step_crossing,R3,146,7,1,0,0.0,0.0,assigned_gt
 bl_step_crossing,R4,118,22,1,0,0.0,0.0,assigned_gt
-bl_step_crossing,R5,134,27,5,3,0.1111111111111111,0.6,assigned_gt
+bl_step_crossing,R5,134,27,4,3,0.1111111111111111,0.75,assigned_gt
 bl_rate_q995,L1,252,45,2,0,0.0,0.0,all_gt
 bl_rate_q995,L2,207,25,0,0,0.0,,all_gt
 bl_rate_q995,L3,110,20,0,0,0.0,,all_gt
@@ -3154,25 +3167,25 @@ bl_practical_or_crossing,R3,146,7,4,0,0.0,0.0,assigned_gt
 bl_practical_or_crossing,R4,118,22,9,0,0.0,0.0,assigned_gt
 bl_practical_or_crossing,R5,134,27,13,6,0.2222222222222222,0.46153846153846156,assigned_gt
 bl_two_signal_strict,L1,252,45,1,0,0.0,0.0,all_gt
-bl_two_signal_strict,L2,207,25,10,0,0.0,0.0,all_gt
+bl_two_signal_strict,L2,207,25,9,0,0.0,0.0,all_gt
 bl_two_signal_strict,L3,110,20,7,0,0.0,0.0,all_gt
 bl_two_signal_strict,L4,38,13,4,0,0.0,0.0,all_gt
 bl_two_signal_strict,L5,279,72,28,7,0.09722222222222222,0.25,all_gt
 bl_two_signal_strict,R1,252,71,2,0,0.0,0.0,all_gt
-bl_two_signal_strict,R2,193,19,9,1,0.05263157894736842,0.1111111111111111,all_gt
+bl_two_signal_strict,R2,193,19,7,1,0.05263157894736842,0.14285714285714285,all_gt
 bl_two_signal_strict,R3,160,21,5,1,0.047619047619047616,0.2,all_gt
 bl_two_signal_strict,R4,136,40,9,0,0.0,0.0,all_gt
-bl_two_signal_strict,R5,173,66,15,7,0.10606060606060606,0.4666666666666667,all_gt
+bl_two_signal_strict,R5,173,66,14,7,0.10606060606060606,0.5,all_gt
 bl_two_signal_strict,L1,217,10,1,0,0.0,0.0,assigned_gt
-bl_two_signal_strict,L2,188,6,10,0,0.0,0.0,assigned_gt
+bl_two_signal_strict,L2,188,6,9,0,0.0,0.0,assigned_gt
 bl_two_signal_strict,L3,95,5,7,0,0.0,0.0,assigned_gt
 bl_two_signal_strict,L4,30,5,4,0,0.0,0.0,assigned_gt
 bl_two_signal_strict,L5,225,18,28,7,0.3888888888888889,0.25,assigned_gt
 bl_two_signal_strict,R1,190,9,2,0,0.0,0.0,assigned_gt
-bl_two_signal_strict,R2,182,8,9,1,0.125,0.1111111111111111,assigned_gt
+bl_two_signal_strict,R2,182,8,7,1,0.125,0.14285714285714285,assigned_gt
 bl_two_signal_strict,R3,146,7,5,1,0.14285714285714285,0.2,assigned_gt
 bl_two_signal_strict,R4,118,22,9,0,0.0,0.0,assigned_gt
-bl_two_signal_strict,R5,134,27,15,7,0.25925925925925924,0.4666666666666667,assigned_gt
+bl_two_signal_strict,R5,134,27,14,7,0.25925925925925924,0.5,assigned_gt
 wl_model_agreement,L1,252,45,87,7,0.15555555555555556,0.08045977011494253,all_gt
 wl_model_agreement,L2,207,25,157,3,0.12,0.01910828025477707,all_gt
 wl_model_agreement,L3,110,20,90,4,0.2,0.044444444444444446,all_gt
@@ -4534,222 +4547,222 @@ bl_span_relative__ni_k5_r4,R3,146,7,55,5,0.7142857142857143,0.09090909090909091,
 bl_span_relative__ni_k5_r4,R4,118,22,45,12,0.5454545454545454,0.26666666666666666,assigned_gt
 bl_span_relative__ni_k5_r4,R5,134,27,75,12,0.4444444444444444,0.16,assigned_gt
 bl_crossing__ni_k2_r1,L1,252,45,10,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r1,L2,207,25,8,1,0.04,0.125,all_gt
-bl_crossing__ni_k2_r1,L3,110,20,4,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r1,L4,38,13,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r1,L5,279,72,14,3,0.041666666666666664,0.21428571428571427,all_gt
+bl_crossing__ni_k2_r1,L2,207,25,7,1,0.04,0.14285714285714285,all_gt
+bl_crossing__ni_k2_r1,L3,110,20,3,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r1,L4,38,13,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r1,L5,279,72,13,3,0.041666666666666664,0.23076923076923078,all_gt
 bl_crossing__ni_k2_r1,R1,252,71,14,1,0.014084507042253521,0.07142857142857142,all_gt
-bl_crossing__ni_k2_r1,R2,193,19,8,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r1,R2,193,19,6,0,0.0,0.0,all_gt
 bl_crossing__ni_k2_r1,R3,160,21,11,0,0.0,0.0,all_gt
 bl_crossing__ni_k2_r1,R4,136,40,8,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r1,R5,173,66,16,7,0.10606060606060606,0.4375,all_gt
+bl_crossing__ni_k2_r1,R5,173,66,15,7,0.10606060606060606,0.4666666666666667,all_gt
 bl_crossing__ni_k2_r1,L1,217,10,10,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r1,L2,188,6,8,1,0.16666666666666666,0.125,assigned_gt
-bl_crossing__ni_k2_r1,L3,95,5,4,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r1,L4,30,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r1,L5,225,18,14,3,0.16666666666666666,0.21428571428571427,assigned_gt
+bl_crossing__ni_k2_r1,L2,188,6,7,1,0.16666666666666666,0.14285714285714285,assigned_gt
+bl_crossing__ni_k2_r1,L3,95,5,3,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r1,L4,30,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r1,L5,225,18,13,3,0.16666666666666666,0.23076923076923078,assigned_gt
 bl_crossing__ni_k2_r1,R1,190,9,14,1,0.1111111111111111,0.07142857142857142,assigned_gt
-bl_crossing__ni_k2_r1,R2,182,8,8,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r1,R2,182,8,6,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k2_r1,R3,146,7,11,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k2_r1,R4,118,22,8,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r1,R5,134,27,16,7,0.25925925925925924,0.4375,assigned_gt
+bl_crossing__ni_k2_r1,R5,134,27,15,7,0.25925925925925924,0.4666666666666667,assigned_gt
 bl_crossing__ni_k2_r2,L1,252,45,14,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r2,L2,207,25,16,1,0.04,0.0625,all_gt
-bl_crossing__ni_k2_r2,L3,110,20,9,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r2,L4,38,13,3,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r2,L5,279,72,20,5,0.06944444444444445,0.25,all_gt
+bl_crossing__ni_k2_r2,L2,207,25,15,1,0.04,0.06666666666666667,all_gt
+bl_crossing__ni_k2_r2,L3,110,20,8,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r2,L4,38,13,2,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r2,L5,279,72,19,5,0.06944444444444445,0.2631578947368421,all_gt
 bl_crossing__ni_k2_r2,R1,252,71,21,3,0.04225352112676056,0.14285714285714285,all_gt
-bl_crossing__ni_k2_r2,R2,193,19,15,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r2,R2,193,19,13,0,0.0,0.0,all_gt
 bl_crossing__ni_k2_r2,R3,160,21,17,0,0.0,0.0,all_gt
 bl_crossing__ni_k2_r2,R4,136,40,15,2,0.05,0.13333333333333333,all_gt
-bl_crossing__ni_k2_r2,R5,173,66,21,8,0.12121212121212122,0.38095238095238093,all_gt
+bl_crossing__ni_k2_r2,R5,173,66,20,8,0.12121212121212122,0.4,all_gt
 bl_crossing__ni_k2_r2,L1,217,10,14,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r2,L2,188,6,16,1,0.16666666666666666,0.0625,assigned_gt
-bl_crossing__ni_k2_r2,L3,95,5,9,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r2,L4,30,5,3,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r2,L5,225,18,20,5,0.2777777777777778,0.25,assigned_gt
+bl_crossing__ni_k2_r2,L2,188,6,15,1,0.16666666666666666,0.06666666666666667,assigned_gt
+bl_crossing__ni_k2_r2,L3,95,5,8,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r2,L4,30,5,2,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r2,L5,225,18,19,5,0.2777777777777778,0.2631578947368421,assigned_gt
 bl_crossing__ni_k2_r2,R1,190,9,21,3,0.3333333333333333,0.14285714285714285,assigned_gt
-bl_crossing__ni_k2_r2,R2,182,8,15,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r2,R2,182,8,13,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k2_r2,R3,146,7,17,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k2_r2,R4,118,22,15,2,0.09090909090909091,0.13333333333333333,assigned_gt
-bl_crossing__ni_k2_r2,R5,134,27,21,8,0.2962962962962963,0.38095238095238093,assigned_gt
+bl_crossing__ni_k2_r2,R5,134,27,20,8,0.2962962962962963,0.4,assigned_gt
 bl_crossing__ni_k2_r4,L1,252,45,29,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r4,L2,207,25,30,1,0.04,0.03333333333333333,all_gt
+bl_crossing__ni_k2_r4,L2,207,25,29,1,0.04,0.034482758620689655,all_gt
 bl_crossing__ni_k2_r4,L3,110,20,11,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r4,L4,38,13,4,0,0.0,0.0,all_gt
-bl_crossing__ni_k2_r4,L5,279,72,32,6,0.08333333333333333,0.1875,all_gt
+bl_crossing__ni_k2_r4,L4,38,13,3,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r4,L5,279,72,31,6,0.08333333333333333,0.1935483870967742,all_gt
 bl_crossing__ni_k2_r4,R1,252,71,28,3,0.04225352112676056,0.10714285714285714,all_gt
-bl_crossing__ni_k2_r4,R2,193,19,22,0,0.0,0.0,all_gt
+bl_crossing__ni_k2_r4,R2,193,19,20,0,0.0,0.0,all_gt
 bl_crossing__ni_k2_r4,R3,160,21,28,0,0.0,0.0,all_gt
 bl_crossing__ni_k2_r4,R4,136,40,30,6,0.15,0.2,all_gt
-bl_crossing__ni_k2_r4,R5,173,66,32,10,0.15151515151515152,0.3125,all_gt
+bl_crossing__ni_k2_r4,R5,173,66,31,10,0.15151515151515152,0.3225806451612903,all_gt
 bl_crossing__ni_k2_r4,L1,217,10,29,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r4,L2,188,6,30,1,0.16666666666666666,0.03333333333333333,assigned_gt
+bl_crossing__ni_k2_r4,L2,188,6,29,1,0.16666666666666666,0.034482758620689655,assigned_gt
 bl_crossing__ni_k2_r4,L3,95,5,11,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r4,L4,30,5,4,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k2_r4,L5,225,18,32,6,0.3333333333333333,0.1875,assigned_gt
+bl_crossing__ni_k2_r4,L4,30,5,3,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r4,L5,225,18,31,6,0.3333333333333333,0.1935483870967742,assigned_gt
 bl_crossing__ni_k2_r4,R1,190,9,28,3,0.3333333333333333,0.10714285714285714,assigned_gt
-bl_crossing__ni_k2_r4,R2,182,8,22,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k2_r4,R2,182,8,20,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k2_r4,R3,146,7,28,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k2_r4,R4,118,22,30,6,0.2727272727272727,0.2,assigned_gt
-bl_crossing__ni_k2_r4,R5,134,27,32,10,0.37037037037037035,0.3125,assigned_gt
+bl_crossing__ni_k2_r4,R5,134,27,31,10,0.37037037037037035,0.3225806451612903,assigned_gt
 bl_crossing__ni_k3_r1,L1,252,45,1,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r1,L2,207,25,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r1,L3,110,20,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r1,L4,38,13,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r1,L5,279,72,9,3,0.041666666666666664,0.3333333333333333,all_gt
+bl_crossing__ni_k3_r1,L2,207,25,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r1,L3,110,20,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r1,L4,38,13,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r1,L5,279,72,8,3,0.041666666666666664,0.375,all_gt
 bl_crossing__ni_k3_r1,R1,252,71,4,1,0.014084507042253521,0.25,all_gt
-bl_crossing__ni_k3_r1,R2,193,19,3,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r1,R2,193,19,1,0,0.0,0.0,all_gt
 bl_crossing__ni_k3_r1,R3,160,21,5,0,0.0,0.0,all_gt
 bl_crossing__ni_k3_r1,R4,136,40,5,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r1,R5,173,66,10,4,0.06060606060606061,0.4,all_gt
+bl_crossing__ni_k3_r1,R5,173,66,8,4,0.06060606060606061,0.5,all_gt
 bl_crossing__ni_k3_r1,L1,217,10,1,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r1,L2,188,6,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r1,L3,95,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r1,L4,30,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r1,L5,225,18,9,3,0.16666666666666666,0.3333333333333333,assigned_gt
+bl_crossing__ni_k3_r1,L2,188,6,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r1,L3,95,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r1,L4,30,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r1,L5,225,18,8,3,0.16666666666666666,0.375,assigned_gt
 bl_crossing__ni_k3_r1,R1,190,9,4,1,0.1111111111111111,0.25,assigned_gt
-bl_crossing__ni_k3_r1,R2,182,8,3,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r1,R2,182,8,1,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k3_r1,R3,146,7,5,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k3_r1,R4,118,22,5,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r1,R5,134,27,10,4,0.14814814814814814,0.4,assigned_gt
+bl_crossing__ni_k3_r1,R5,134,27,8,4,0.14814814814814814,0.5,assigned_gt
 bl_crossing__ni_k3_r2,L1,252,45,4,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r2,L2,207,25,3,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r2,L3,110,20,5,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r2,L4,38,13,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r2,L5,279,72,9,3,0.041666666666666664,0.3333333333333333,all_gt
+bl_crossing__ni_k3_r2,L2,207,25,2,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r2,L3,110,20,4,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r2,L4,38,13,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r2,L5,279,72,8,3,0.041666666666666664,0.375,all_gt
 bl_crossing__ni_k3_r2,R1,252,71,7,2,0.028169014084507043,0.2857142857142857,all_gt
-bl_crossing__ni_k3_r2,R2,193,19,4,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r2,R2,193,19,2,0,0.0,0.0,all_gt
 bl_crossing__ni_k3_r2,R3,160,21,5,0,0.0,0.0,all_gt
 bl_crossing__ni_k3_r2,R4,136,40,6,1,0.025,0.16666666666666666,all_gt
-bl_crossing__ni_k3_r2,R5,173,66,13,4,0.06060606060606061,0.3076923076923077,all_gt
+bl_crossing__ni_k3_r2,R5,173,66,11,4,0.06060606060606061,0.36363636363636365,all_gt
 bl_crossing__ni_k3_r2,L1,217,10,4,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r2,L2,188,6,3,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r2,L3,95,5,5,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r2,L4,30,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r2,L5,225,18,9,3,0.16666666666666666,0.3333333333333333,assigned_gt
+bl_crossing__ni_k3_r2,L2,188,6,2,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r2,L3,95,5,4,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r2,L4,30,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r2,L5,225,18,8,3,0.16666666666666666,0.375,assigned_gt
 bl_crossing__ni_k3_r2,R1,190,9,7,2,0.2222222222222222,0.2857142857142857,assigned_gt
-bl_crossing__ni_k3_r2,R2,182,8,4,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r2,R2,182,8,2,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k3_r2,R3,146,7,5,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k3_r2,R4,118,22,6,1,0.045454545454545456,0.16666666666666666,assigned_gt
-bl_crossing__ni_k3_r2,R5,134,27,13,4,0.14814814814814814,0.3076923076923077,assigned_gt
+bl_crossing__ni_k3_r2,R5,134,27,11,4,0.14814814814814814,0.36363636363636365,assigned_gt
 bl_crossing__ni_k3_r4,L1,252,45,9,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r4,L2,207,25,8,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r4,L3,110,20,5,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r4,L4,38,13,3,0,0.0,0.0,all_gt
-bl_crossing__ni_k3_r4,L5,279,72,13,3,0.041666666666666664,0.23076923076923078,all_gt
+bl_crossing__ni_k3_r4,L2,207,25,7,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r4,L3,110,20,4,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r4,L4,38,13,2,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r4,L5,279,72,12,3,0.041666666666666664,0.25,all_gt
 bl_crossing__ni_k3_r4,R1,252,71,8,2,0.028169014084507043,0.25,all_gt
-bl_crossing__ni_k3_r4,R2,193,19,6,0,0.0,0.0,all_gt
+bl_crossing__ni_k3_r4,R2,193,19,4,0,0.0,0.0,all_gt
 bl_crossing__ni_k3_r4,R3,160,21,8,0,0.0,0.0,all_gt
 bl_crossing__ni_k3_r4,R4,136,40,13,4,0.1,0.3076923076923077,all_gt
-bl_crossing__ni_k3_r4,R5,173,66,16,5,0.07575757575757576,0.3125,all_gt
+bl_crossing__ni_k3_r4,R5,173,66,14,5,0.07575757575757576,0.35714285714285715,all_gt
 bl_crossing__ni_k3_r4,L1,217,10,9,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r4,L2,188,6,8,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r4,L3,95,5,5,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r4,L4,30,5,3,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k3_r4,L5,225,18,13,3,0.16666666666666666,0.23076923076923078,assigned_gt
+bl_crossing__ni_k3_r4,L2,188,6,7,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r4,L3,95,5,4,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r4,L4,30,5,2,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r4,L5,225,18,12,3,0.16666666666666666,0.25,assigned_gt
 bl_crossing__ni_k3_r4,R1,190,9,8,2,0.2222222222222222,0.25,assigned_gt
-bl_crossing__ni_k3_r4,R2,182,8,6,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k3_r4,R2,182,8,4,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k3_r4,R3,146,7,8,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k3_r4,R4,118,22,13,4,0.18181818181818182,0.3076923076923077,assigned_gt
-bl_crossing__ni_k3_r4,R5,134,27,16,5,0.18518518518518517,0.3125,assigned_gt
+bl_crossing__ni_k3_r4,R5,134,27,14,5,0.18518518518518517,0.35714285714285715,assigned_gt
 bl_crossing__ni_k5_r1,L1,252,45,0,0,0.0,,all_gt
-bl_crossing__ni_k5_r1,L2,207,25,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r1,L3,110,20,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r1,L4,38,13,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r1,L5,279,72,7,3,0.041666666666666664,0.42857142857142855,all_gt
+bl_crossing__ni_k5_r1,L2,207,25,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r1,L3,110,20,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r1,L4,38,13,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r1,L5,279,72,6,3,0.041666666666666664,0.5,all_gt
 bl_crossing__ni_k5_r1,R1,252,71,0,0,0.0,,all_gt
-bl_crossing__ni_k5_r1,R2,193,19,2,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r1,R2,193,19,0,0,0.0,,all_gt
 bl_crossing__ni_k5_r1,R3,160,21,2,0,0.0,0.0,all_gt
 bl_crossing__ni_k5_r1,R4,136,40,3,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r1,R5,173,66,8,4,0.06060606060606061,0.5,all_gt
+bl_crossing__ni_k5_r1,R5,173,66,6,4,0.06060606060606061,0.6666666666666666,all_gt
 bl_crossing__ni_k5_r1,L1,217,10,0,0,0.0,,assigned_gt
-bl_crossing__ni_k5_r1,L2,188,6,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r1,L3,95,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r1,L4,30,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r1,L5,225,18,7,3,0.16666666666666666,0.42857142857142855,assigned_gt
+bl_crossing__ni_k5_r1,L2,188,6,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r1,L3,95,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r1,L4,30,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r1,L5,225,18,6,3,0.16666666666666666,0.5,assigned_gt
 bl_crossing__ni_k5_r1,R1,190,9,0,0,0.0,,assigned_gt
-bl_crossing__ni_k5_r1,R2,182,8,2,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r1,R2,182,8,0,0,0.0,,assigned_gt
 bl_crossing__ni_k5_r1,R3,146,7,2,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k5_r1,R4,118,22,3,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r1,R5,134,27,8,4,0.14814814814814814,0.5,assigned_gt
+bl_crossing__ni_k5_r1,R5,134,27,6,4,0.14814814814814814,0.6666666666666666,assigned_gt
 bl_crossing__ni_k5_r2,L1,252,45,0,0,0.0,,all_gt
-bl_crossing__ni_k5_r2,L2,207,25,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r2,L3,110,20,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r2,L4,38,13,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r2,L5,279,72,7,3,0.041666666666666664,0.42857142857142855,all_gt
+bl_crossing__ni_k5_r2,L2,207,25,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r2,L3,110,20,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r2,L4,38,13,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r2,L5,279,72,6,3,0.041666666666666664,0.5,all_gt
 bl_crossing__ni_k5_r2,R1,252,71,0,0,0.0,,all_gt
-bl_crossing__ni_k5_r2,R2,193,19,2,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r2,R2,193,19,0,0,0.0,,all_gt
 bl_crossing__ni_k5_r2,R3,160,21,2,0,0.0,0.0,all_gt
 bl_crossing__ni_k5_r2,R4,136,40,3,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r2,R5,173,66,8,4,0.06060606060606061,0.5,all_gt
+bl_crossing__ni_k5_r2,R5,173,66,6,4,0.06060606060606061,0.6666666666666666,all_gt
 bl_crossing__ni_k5_r2,L1,217,10,0,0,0.0,,assigned_gt
-bl_crossing__ni_k5_r2,L2,188,6,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r2,L3,95,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r2,L4,30,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r2,L5,225,18,7,3,0.16666666666666666,0.42857142857142855,assigned_gt
+bl_crossing__ni_k5_r2,L2,188,6,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r2,L3,95,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r2,L4,30,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r2,L5,225,18,6,3,0.16666666666666666,0.5,assigned_gt
 bl_crossing__ni_k5_r2,R1,190,9,0,0,0.0,,assigned_gt
-bl_crossing__ni_k5_r2,R2,182,8,2,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r2,R2,182,8,0,0,0.0,,assigned_gt
 bl_crossing__ni_k5_r2,R3,146,7,2,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k5_r2,R4,118,22,3,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r2,R5,134,27,8,4,0.14814814814814814,0.5,assigned_gt
+bl_crossing__ni_k5_r2,R5,134,27,6,4,0.14814814814814814,0.6666666666666666,assigned_gt
 bl_crossing__ni_k5_r4,L1,252,45,0,0,0.0,,all_gt
-bl_crossing__ni_k5_r4,L2,207,25,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r4,L3,110,20,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r4,L4,38,13,2,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r4,L5,279,72,7,3,0.041666666666666664,0.42857142857142855,all_gt
+bl_crossing__ni_k5_r4,L2,207,25,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r4,L3,110,20,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r4,L4,38,13,1,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r4,L5,279,72,6,3,0.041666666666666664,0.5,all_gt
 bl_crossing__ni_k5_r4,R1,252,71,0,0,0.0,,all_gt
-bl_crossing__ni_k5_r4,R2,193,19,2,0,0.0,0.0,all_gt
+bl_crossing__ni_k5_r4,R2,193,19,0,0,0.0,,all_gt
 bl_crossing__ni_k5_r4,R3,160,21,2,0,0.0,0.0,all_gt
 bl_crossing__ni_k5_r4,R4,136,40,3,0,0.0,0.0,all_gt
-bl_crossing__ni_k5_r4,R5,173,66,8,4,0.06060606060606061,0.5,all_gt
+bl_crossing__ni_k5_r4,R5,173,66,6,4,0.06060606060606061,0.6666666666666666,all_gt
 bl_crossing__ni_k5_r4,L1,217,10,0,0,0.0,,assigned_gt
-bl_crossing__ni_k5_r4,L2,188,6,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r4,L3,95,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r4,L4,30,5,2,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r4,L5,225,18,7,3,0.16666666666666666,0.42857142857142855,assigned_gt
+bl_crossing__ni_k5_r4,L2,188,6,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r4,L3,95,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r4,L4,30,5,1,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r4,L5,225,18,6,3,0.16666666666666666,0.5,assigned_gt
 bl_crossing__ni_k5_r4,R1,190,9,0,0,0.0,,assigned_gt
-bl_crossing__ni_k5_r4,R2,182,8,2,0,0.0,0.0,assigned_gt
+bl_crossing__ni_k5_r4,R2,182,8,0,0,0.0,,assigned_gt
 bl_crossing__ni_k5_r4,R3,146,7,2,0,0.0,0.0,assigned_gt
 bl_crossing__ni_k5_r4,R4,118,22,3,0,0.0,0.0,assigned_gt
-bl_crossing__ni_k5_r4,R5,134,27,8,4,0.14814814814814814,0.5,assigned_gt
+bl_crossing__ni_k5_r4,R5,134,27,6,4,0.14814814814814814,0.6666666666666666,assigned_gt
 bl_step_crossing__ni_k2_r1,L1,252,45,10,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r1,L2,207,25,6,1,0.04,0.16666666666666666,all_gt
-bl_step_crossing__ni_k2_r1,L3,110,20,4,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k2_r1,L3,110,20,3,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r1,L4,38,13,0,0,0.0,,all_gt
 bl_step_crossing__ni_k2_r1,L5,279,72,7,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r1,R1,252,71,14,1,0.014084507042253521,0.07142857142857142,all_gt
-bl_step_crossing__ni_k2_r1,R2,193,19,7,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k2_r1,R2,193,19,6,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r1,R3,160,21,10,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r1,R4,136,40,6,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r1,R5,173,66,13,6,0.09090909090909091,0.46153846153846156,all_gt
 bl_step_crossing__ni_k2_r1,L1,217,10,10,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r1,L2,188,6,6,1,0.16666666666666666,0.16666666666666666,assigned_gt
-bl_step_crossing__ni_k2_r1,L3,95,5,4,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k2_r1,L3,95,5,3,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r1,L4,30,5,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k2_r1,L5,225,18,7,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r1,R1,190,9,14,1,0.1111111111111111,0.07142857142857142,assigned_gt
-bl_step_crossing__ni_k2_r1,R2,182,8,7,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k2_r1,R2,182,8,6,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r1,R3,146,7,10,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r1,R4,118,22,6,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r1,R5,134,27,13,6,0.2222222222222222,0.46153846153846156,assigned_gt
 bl_step_crossing__ni_k2_r2,L1,252,45,14,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r2,L2,207,25,14,1,0.04,0.07142857142857142,all_gt
-bl_step_crossing__ni_k2_r2,L3,110,20,9,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k2_r2,L3,110,20,8,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r2,L4,38,13,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r2,L5,279,72,13,2,0.027777777777777776,0.15384615384615385,all_gt
 bl_step_crossing__ni_k2_r2,R1,252,71,21,3,0.04225352112676056,0.14285714285714285,all_gt
-bl_step_crossing__ni_k2_r2,R2,193,19,14,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k2_r2,R2,193,19,13,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r2,R3,160,21,16,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r2,R4,136,40,13,2,0.05,0.15384615384615385,all_gt
 bl_step_crossing__ni_k2_r2,R5,173,66,18,7,0.10606060606060606,0.3888888888888889,all_gt
 bl_step_crossing__ni_k2_r2,L1,217,10,14,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r2,L2,188,6,14,1,0.16666666666666666,0.07142857142857142,assigned_gt
-bl_step_crossing__ni_k2_r2,L3,95,5,9,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k2_r2,L3,95,5,8,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r2,L4,30,5,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r2,L5,225,18,13,2,0.1111111111111111,0.15384615384615385,assigned_gt
 bl_step_crossing__ni_k2_r2,R1,190,9,21,3,0.3333333333333333,0.14285714285714285,assigned_gt
-bl_step_crossing__ni_k2_r2,R2,182,8,14,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k2_r2,R2,182,8,13,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r2,R3,146,7,16,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r2,R4,118,22,13,2,0.09090909090909091,0.15384615384615385,assigned_gt
 bl_step_crossing__ni_k2_r2,R5,134,27,18,7,0.25925925925925924,0.3888888888888889,assigned_gt
@@ -4759,7 +4772,7 @@ bl_step_crossing__ni_k2_r4,L3,110,20,11,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r4,L4,38,13,2,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r4,L5,279,72,25,3,0.041666666666666664,0.12,all_gt
 bl_step_crossing__ni_k2_r4,R1,252,71,28,3,0.04225352112676056,0.10714285714285714,all_gt
-bl_step_crossing__ni_k2_r4,R2,193,19,21,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k2_r4,R2,193,19,20,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r4,R3,160,21,27,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k2_r4,R4,136,40,28,6,0.15,0.21428571428571427,all_gt
 bl_step_crossing__ni_k2_r4,R5,173,66,29,9,0.13636363636363635,0.3103448275862069,all_gt
@@ -4769,130 +4782,130 @@ bl_step_crossing__ni_k2_r4,L3,95,5,11,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r4,L4,30,5,2,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r4,L5,225,18,25,3,0.16666666666666666,0.12,assigned_gt
 bl_step_crossing__ni_k2_r4,R1,190,9,28,3,0.3333333333333333,0.10714285714285714,assigned_gt
-bl_step_crossing__ni_k2_r4,R2,182,8,21,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k2_r4,R2,182,8,20,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r4,R3,146,7,27,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k2_r4,R4,118,22,28,6,0.2727272727272727,0.21428571428571427,assigned_gt
 bl_step_crossing__ni_k2_r4,R5,134,27,29,9,0.3333333333333333,0.3103448275862069,assigned_gt
 bl_step_crossing__ni_k3_r1,L1,252,45,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r1,L2,207,25,0,0,0.0,,all_gt
-bl_step_crossing__ni_k3_r1,L3,110,20,2,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k3_r1,L3,110,20,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r1,L4,38,13,0,0,0.0,,all_gt
 bl_step_crossing__ni_k3_r1,L5,279,72,2,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r1,R1,252,71,4,1,0.014084507042253521,0.25,all_gt
-bl_step_crossing__ni_k3_r1,R2,193,19,2,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k3_r1,R2,193,19,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r1,R3,160,21,4,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r1,R4,136,40,3,0,0.0,0.0,all_gt
-bl_step_crossing__ni_k3_r1,R5,173,66,7,3,0.045454545454545456,0.42857142857142855,all_gt
+bl_step_crossing__ni_k3_r1,R5,173,66,6,3,0.045454545454545456,0.5,all_gt
 bl_step_crossing__ni_k3_r1,L1,217,10,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r1,L2,188,6,0,0,0.0,,assigned_gt
-bl_step_crossing__ni_k3_r1,L3,95,5,2,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k3_r1,L3,95,5,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r1,L4,30,5,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k3_r1,L5,225,18,2,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r1,R1,190,9,4,1,0.1111111111111111,0.25,assigned_gt
-bl_step_crossing__ni_k3_r1,R2,182,8,2,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k3_r1,R2,182,8,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r1,R3,146,7,4,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r1,R4,118,22,3,0,0.0,0.0,assigned_gt
-bl_step_crossing__ni_k3_r1,R5,134,27,7,3,0.1111111111111111,0.42857142857142855,assigned_gt
+bl_step_crossing__ni_k3_r1,R5,134,27,6,3,0.1111111111111111,0.5,assigned_gt
 bl_step_crossing__ni_k3_r2,L1,252,45,4,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r2,L2,207,25,1,0,0.0,0.0,all_gt
-bl_step_crossing__ni_k3_r2,L3,110,20,5,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k3_r2,L3,110,20,4,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r2,L4,38,13,0,0,0.0,,all_gt
 bl_step_crossing__ni_k3_r2,L5,279,72,2,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r2,R1,252,71,7,2,0.028169014084507043,0.2857142857142857,all_gt
-bl_step_crossing__ni_k3_r2,R2,193,19,3,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k3_r2,R2,193,19,2,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r2,R3,160,21,4,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r2,R4,136,40,4,1,0.025,0.25,all_gt
-bl_step_crossing__ni_k3_r2,R5,173,66,10,3,0.045454545454545456,0.3,all_gt
+bl_step_crossing__ni_k3_r2,R5,173,66,9,3,0.045454545454545456,0.3333333333333333,all_gt
 bl_step_crossing__ni_k3_r2,L1,217,10,4,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r2,L2,188,6,1,0,0.0,0.0,assigned_gt
-bl_step_crossing__ni_k3_r2,L3,95,5,5,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k3_r2,L3,95,5,4,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r2,L4,30,5,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k3_r2,L5,225,18,2,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r2,R1,190,9,7,2,0.2222222222222222,0.2857142857142857,assigned_gt
-bl_step_crossing__ni_k3_r2,R2,182,8,3,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k3_r2,R2,182,8,2,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r2,R3,146,7,4,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r2,R4,118,22,4,1,0.045454545454545456,0.25,assigned_gt
-bl_step_crossing__ni_k3_r2,R5,134,27,10,3,0.1111111111111111,0.3,assigned_gt
+bl_step_crossing__ni_k3_r2,R5,134,27,9,3,0.1111111111111111,0.3333333333333333,assigned_gt
 bl_step_crossing__ni_k3_r4,L1,252,45,9,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r4,L2,207,25,6,0,0.0,0.0,all_gt
-bl_step_crossing__ni_k3_r4,L3,110,20,5,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k3_r4,L3,110,20,4,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r4,L4,38,13,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r4,L5,279,72,6,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r4,R1,252,71,8,2,0.028169014084507043,0.25,all_gt
-bl_step_crossing__ni_k3_r4,R2,193,19,5,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k3_r4,R2,193,19,4,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r4,R3,160,21,7,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k3_r4,R4,136,40,11,4,0.1,0.36363636363636365,all_gt
-bl_step_crossing__ni_k3_r4,R5,173,66,13,4,0.06060606060606061,0.3076923076923077,all_gt
+bl_step_crossing__ni_k3_r4,R5,173,66,12,4,0.06060606060606061,0.3333333333333333,all_gt
 bl_step_crossing__ni_k3_r4,L1,217,10,9,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r4,L2,188,6,6,0,0.0,0.0,assigned_gt
-bl_step_crossing__ni_k3_r4,L3,95,5,5,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k3_r4,L3,95,5,4,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r4,L4,30,5,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r4,L5,225,18,6,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r4,R1,190,9,8,2,0.2222222222222222,0.25,assigned_gt
-bl_step_crossing__ni_k3_r4,R2,182,8,5,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k3_r4,R2,182,8,4,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r4,R3,146,7,7,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k3_r4,R4,118,22,11,4,0.18181818181818182,0.36363636363636365,assigned_gt
-bl_step_crossing__ni_k3_r4,R5,134,27,13,4,0.14814814814814814,0.3076923076923077,assigned_gt
+bl_step_crossing__ni_k3_r4,R5,134,27,12,4,0.14814814814814814,0.3333333333333333,assigned_gt
 bl_step_crossing__ni_k5_r1,L1,252,45,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r1,L2,207,25,0,0,0.0,,all_gt
-bl_step_crossing__ni_k5_r1,L3,110,20,2,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k5_r1,L3,110,20,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k5_r1,L4,38,13,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r1,L5,279,72,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r1,R1,252,71,0,0,0.0,,all_gt
-bl_step_crossing__ni_k5_r1,R2,193,19,1,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k5_r1,R2,193,19,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r1,R3,160,21,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k5_r1,R4,136,40,1,0,0.0,0.0,all_gt
-bl_step_crossing__ni_k5_r1,R5,173,66,5,3,0.045454545454545456,0.6,all_gt
+bl_step_crossing__ni_k5_r1,R5,173,66,4,3,0.045454545454545456,0.75,all_gt
 bl_step_crossing__ni_k5_r1,L1,217,10,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r1,L2,188,6,0,0,0.0,,assigned_gt
-bl_step_crossing__ni_k5_r1,L3,95,5,2,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k5_r1,L3,95,5,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k5_r1,L4,30,5,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r1,L5,225,18,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r1,R1,190,9,0,0,0.0,,assigned_gt
-bl_step_crossing__ni_k5_r1,R2,182,8,1,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k5_r1,R2,182,8,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r1,R3,146,7,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k5_r1,R4,118,22,1,0,0.0,0.0,assigned_gt
-bl_step_crossing__ni_k5_r1,R5,134,27,5,3,0.1111111111111111,0.6,assigned_gt
+bl_step_crossing__ni_k5_r1,R5,134,27,4,3,0.1111111111111111,0.75,assigned_gt
 bl_step_crossing__ni_k5_r2,L1,252,45,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r2,L2,207,25,0,0,0.0,,all_gt
-bl_step_crossing__ni_k5_r2,L3,110,20,2,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k5_r2,L3,110,20,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k5_r2,L4,38,13,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r2,L5,279,72,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r2,R1,252,71,0,0,0.0,,all_gt
-bl_step_crossing__ni_k5_r2,R2,193,19,1,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k5_r2,R2,193,19,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r2,R3,160,21,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k5_r2,R4,136,40,1,0,0.0,0.0,all_gt
-bl_step_crossing__ni_k5_r2,R5,173,66,5,3,0.045454545454545456,0.6,all_gt
+bl_step_crossing__ni_k5_r2,R5,173,66,4,3,0.045454545454545456,0.75,all_gt
 bl_step_crossing__ni_k5_r2,L1,217,10,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r2,L2,188,6,0,0,0.0,,assigned_gt
-bl_step_crossing__ni_k5_r2,L3,95,5,2,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k5_r2,L3,95,5,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k5_r2,L4,30,5,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r2,L5,225,18,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r2,R1,190,9,0,0,0.0,,assigned_gt
-bl_step_crossing__ni_k5_r2,R2,182,8,1,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k5_r2,R2,182,8,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r2,R3,146,7,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k5_r2,R4,118,22,1,0,0.0,0.0,assigned_gt
-bl_step_crossing__ni_k5_r2,R5,134,27,5,3,0.1111111111111111,0.6,assigned_gt
+bl_step_crossing__ni_k5_r2,R5,134,27,4,3,0.1111111111111111,0.75,assigned_gt
 bl_step_crossing__ni_k5_r4,L1,252,45,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r4,L2,207,25,0,0,0.0,,all_gt
-bl_step_crossing__ni_k5_r4,L3,110,20,2,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k5_r4,L3,110,20,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k5_r4,L4,38,13,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r4,L5,279,72,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r4,R1,252,71,0,0,0.0,,all_gt
-bl_step_crossing__ni_k5_r4,R2,193,19,1,0,0.0,0.0,all_gt
+bl_step_crossing__ni_k5_r4,R2,193,19,0,0,0.0,,all_gt
 bl_step_crossing__ni_k5_r4,R3,160,21,1,0,0.0,0.0,all_gt
 bl_step_crossing__ni_k5_r4,R4,136,40,1,0,0.0,0.0,all_gt
-bl_step_crossing__ni_k5_r4,R5,173,66,5,3,0.045454545454545456,0.6,all_gt
+bl_step_crossing__ni_k5_r4,R5,173,66,4,3,0.045454545454545456,0.75,all_gt
 bl_step_crossing__ni_k5_r4,L1,217,10,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r4,L2,188,6,0,0,0.0,,assigned_gt
-bl_step_crossing__ni_k5_r4,L3,95,5,2,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k5_r4,L3,95,5,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k5_r4,L4,30,5,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r4,L5,225,18,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r4,R1,190,9,0,0,0.0,,assigned_gt
-bl_step_crossing__ni_k5_r4,R2,182,8,1,0,0.0,0.0,assigned_gt
+bl_step_crossing__ni_k5_r4,R2,182,8,0,0,0.0,,assigned_gt
 bl_step_crossing__ni_k5_r4,R3,146,7,1,0,0.0,0.0,assigned_gt
 bl_step_crossing__ni_k5_r4,R4,118,22,1,0,0.0,0.0,assigned_gt
-bl_step_crossing__ni_k5_r4,R5,134,27,5,3,0.1111111111111111,0.6,assigned_gt
+bl_step_crossing__ni_k5_r4,R5,134,27,4,3,0.1111111111111111,0.75,assigned_gt
 bl_rate_q995__ni_k2_r1,L1,252,45,12,0,0.0,0.0,all_gt
 bl_rate_q995__ni_k2_r1,L2,207,25,6,1,0.04,0.16666666666666666,all_gt
 bl_rate_q995__ni_k2_r1,L3,110,20,2,0,0.0,0.0,all_gt
@@ -5974,185 +5987,185 @@ bl_practical_or_crossing__ni_k5_r4,R3,146,7,4,0,0.0,0.0,assigned_gt
 bl_practical_or_crossing__ni_k5_r4,R4,118,22,9,0,0.0,0.0,assigned_gt
 bl_practical_or_crossing__ni_k5_r4,R5,134,27,13,6,0.2222222222222222,0.46153846153846156,assigned_gt
 bl_two_signal_strict__ni_k2_r1,L1,252,45,11,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k2_r1,L2,207,25,15,1,0.04,0.06666666666666667,all_gt
+bl_two_signal_strict__ni_k2_r1,L2,207,25,14,1,0.04,0.07142857142857142,all_gt
 bl_two_signal_strict__ni_k2_r1,L3,110,20,8,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k2_r1,L4,38,13,4,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k2_r1,L5,279,72,35,7,0.09722222222222222,0.2,all_gt
 bl_two_signal_strict__ni_k2_r1,R1,252,71,15,1,0.014084507042253521,0.06666666666666667,all_gt
-bl_two_signal_strict__ni_k2_r1,R2,193,19,14,1,0.05263157894736842,0.07142857142857142,all_gt
+bl_two_signal_strict__ni_k2_r1,R2,193,19,12,1,0.05263157894736842,0.08333333333333333,all_gt
 bl_two_signal_strict__ni_k2_r1,R3,160,21,14,1,0.047619047619047616,0.07142857142857142,all_gt
 bl_two_signal_strict__ni_k2_r1,R4,136,40,13,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k2_r1,R5,173,66,23,10,0.15151515151515152,0.43478260869565216,all_gt
 bl_two_signal_strict__ni_k2_r1,L1,217,10,11,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k2_r1,L2,188,6,15,1,0.16666666666666666,0.06666666666666667,assigned_gt
+bl_two_signal_strict__ni_k2_r1,L2,188,6,14,1,0.16666666666666666,0.07142857142857142,assigned_gt
 bl_two_signal_strict__ni_k2_r1,L3,95,5,8,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k2_r1,L4,30,5,4,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k2_r1,L5,225,18,35,7,0.3888888888888889,0.2,assigned_gt
 bl_two_signal_strict__ni_k2_r1,R1,190,9,15,1,0.1111111111111111,0.06666666666666667,assigned_gt
-bl_two_signal_strict__ni_k2_r1,R2,182,8,14,1,0.125,0.07142857142857142,assigned_gt
+bl_two_signal_strict__ni_k2_r1,R2,182,8,12,1,0.125,0.08333333333333333,assigned_gt
 bl_two_signal_strict__ni_k2_r1,R3,146,7,14,1,0.14285714285714285,0.07142857142857142,assigned_gt
 bl_two_signal_strict__ni_k2_r1,R4,118,22,13,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k2_r1,R5,134,27,23,10,0.37037037037037035,0.43478260869565216,assigned_gt
 bl_two_signal_strict__ni_k2_r2,L1,252,45,15,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k2_r2,L2,207,25,23,1,0.04,0.043478260869565216,all_gt
+bl_two_signal_strict__ni_k2_r2,L2,207,25,22,1,0.04,0.045454545454545456,all_gt
 bl_two_signal_strict__ni_k2_r2,L3,110,20,13,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k2_r2,L4,38,13,5,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k2_r2,L5,279,72,39,8,0.1111111111111111,0.20512820512820512,all_gt
 bl_two_signal_strict__ni_k2_r2,R1,252,71,22,3,0.04225352112676056,0.13636363636363635,all_gt
-bl_two_signal_strict__ni_k2_r2,R2,193,19,21,1,0.05263157894736842,0.047619047619047616,all_gt
+bl_two_signal_strict__ni_k2_r2,R2,193,19,19,1,0.05263157894736842,0.05263157894736842,all_gt
 bl_two_signal_strict__ni_k2_r2,R3,160,21,19,1,0.047619047619047616,0.05263157894736842,all_gt
 bl_two_signal_strict__ni_k2_r2,R4,136,40,18,2,0.05,0.1111111111111111,all_gt
 bl_two_signal_strict__ni_k2_r2,R5,173,66,27,10,0.15151515151515152,0.37037037037037035,all_gt
 bl_two_signal_strict__ni_k2_r2,L1,217,10,15,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k2_r2,L2,188,6,23,1,0.16666666666666666,0.043478260869565216,assigned_gt
+bl_two_signal_strict__ni_k2_r2,L2,188,6,22,1,0.16666666666666666,0.045454545454545456,assigned_gt
 bl_two_signal_strict__ni_k2_r2,L3,95,5,13,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k2_r2,L4,30,5,5,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k2_r2,L5,225,18,39,8,0.4444444444444444,0.20512820512820512,assigned_gt
 bl_two_signal_strict__ni_k2_r2,R1,190,9,22,3,0.3333333333333333,0.13636363636363635,assigned_gt
-bl_two_signal_strict__ni_k2_r2,R2,182,8,21,1,0.125,0.047619047619047616,assigned_gt
+bl_two_signal_strict__ni_k2_r2,R2,182,8,19,1,0.125,0.05263157894736842,assigned_gt
 bl_two_signal_strict__ni_k2_r2,R3,146,7,19,1,0.14285714285714285,0.05263157894736842,assigned_gt
 bl_two_signal_strict__ni_k2_r2,R4,118,22,18,2,0.09090909090909091,0.1111111111111111,assigned_gt
 bl_two_signal_strict__ni_k2_r2,R5,134,27,27,10,0.37037037037037035,0.37037037037037035,assigned_gt
 bl_two_signal_strict__ni_k2_r4,L1,252,45,30,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k2_r4,L2,207,25,34,1,0.04,0.029411764705882353,all_gt
+bl_two_signal_strict__ni_k2_r4,L2,207,25,33,1,0.04,0.030303030303030304,all_gt
 bl_two_signal_strict__ni_k2_r4,L3,110,20,15,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k2_r4,L4,38,13,6,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k2_r4,L5,279,72,51,9,0.125,0.17647058823529413,all_gt
 bl_two_signal_strict__ni_k2_r4,R1,252,71,29,3,0.04225352112676056,0.10344827586206896,all_gt
-bl_two_signal_strict__ni_k2_r4,R2,193,19,27,1,0.05263157894736842,0.037037037037037035,all_gt
+bl_two_signal_strict__ni_k2_r4,R2,193,19,25,1,0.05263157894736842,0.04,all_gt
 bl_two_signal_strict__ni_k2_r4,R3,160,21,29,1,0.047619047619047616,0.034482758620689655,all_gt
 bl_two_signal_strict__ni_k2_r4,R4,136,40,32,6,0.15,0.1875,all_gt
 bl_two_signal_strict__ni_k2_r4,R5,173,66,36,11,0.16666666666666666,0.3055555555555556,all_gt
 bl_two_signal_strict__ni_k2_r4,L1,217,10,30,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k2_r4,L2,188,6,34,1,0.16666666666666666,0.029411764705882353,assigned_gt
+bl_two_signal_strict__ni_k2_r4,L2,188,6,33,1,0.16666666666666666,0.030303030303030304,assigned_gt
 bl_two_signal_strict__ni_k2_r4,L3,95,5,15,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k2_r4,L4,30,5,6,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k2_r4,L5,225,18,51,9,0.5,0.17647058823529413,assigned_gt
 bl_two_signal_strict__ni_k2_r4,R1,190,9,29,3,0.3333333333333333,0.10344827586206896,assigned_gt
-bl_two_signal_strict__ni_k2_r4,R2,182,8,27,1,0.125,0.037037037037037035,assigned_gt
+bl_two_signal_strict__ni_k2_r4,R2,182,8,25,1,0.125,0.04,assigned_gt
 bl_two_signal_strict__ni_k2_r4,R3,146,7,29,1,0.14285714285714285,0.034482758620689655,assigned_gt
 bl_two_signal_strict__ni_k2_r4,R4,118,22,32,6,0.2727272727272727,0.1875,assigned_gt
 bl_two_signal_strict__ni_k2_r4,R5,134,27,36,11,0.4074074074074074,0.3055555555555556,assigned_gt
 bl_two_signal_strict__ni_k3_r1,L1,252,45,2,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k3_r1,L2,207,25,10,0,0.0,0.0,all_gt
+bl_two_signal_strict__ni_k3_r1,L2,207,25,9,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r1,L3,110,20,7,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r1,L4,38,13,4,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r1,L5,279,72,30,7,0.09722222222222222,0.23333333333333334,all_gt
 bl_two_signal_strict__ni_k3_r1,R1,252,71,5,1,0.014084507042253521,0.2,all_gt
-bl_two_signal_strict__ni_k3_r1,R2,193,19,10,1,0.05263157894736842,0.1,all_gt
+bl_two_signal_strict__ni_k3_r1,R2,193,19,8,1,0.05263157894736842,0.125,all_gt
 bl_two_signal_strict__ni_k3_r1,R3,160,21,8,1,0.047619047619047616,0.125,all_gt
 bl_two_signal_strict__ni_k3_r1,R4,136,40,11,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k3_r1,R5,173,66,17,7,0.10606060606060606,0.4117647058823529,all_gt
+bl_two_signal_strict__ni_k3_r1,R5,173,66,16,7,0.10606060606060606,0.4375,all_gt
 bl_two_signal_strict__ni_k3_r1,L1,217,10,2,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k3_r1,L2,188,6,10,0,0.0,0.0,assigned_gt
+bl_two_signal_strict__ni_k3_r1,L2,188,6,9,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r1,L3,95,5,7,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r1,L4,30,5,4,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r1,L5,225,18,30,7,0.3888888888888889,0.23333333333333334,assigned_gt
 bl_two_signal_strict__ni_k3_r1,R1,190,9,5,1,0.1111111111111111,0.2,assigned_gt
-bl_two_signal_strict__ni_k3_r1,R2,182,8,10,1,0.125,0.1,assigned_gt
+bl_two_signal_strict__ni_k3_r1,R2,182,8,8,1,0.125,0.125,assigned_gt
 bl_two_signal_strict__ni_k3_r1,R3,146,7,8,1,0.14285714285714285,0.125,assigned_gt
 bl_two_signal_strict__ni_k3_r1,R4,118,22,11,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k3_r1,R5,134,27,17,7,0.25925925925925924,0.4117647058823529,assigned_gt
+bl_two_signal_strict__ni_k3_r1,R5,134,27,16,7,0.25925925925925924,0.4375,assigned_gt
 bl_two_signal_strict__ni_k3_r2,L1,252,45,5,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k3_r2,L2,207,25,11,0,0.0,0.0,all_gt
+bl_two_signal_strict__ni_k3_r2,L2,207,25,10,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r2,L3,110,20,10,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r2,L4,38,13,4,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r2,L5,279,72,30,7,0.09722222222222222,0.23333333333333334,all_gt
 bl_two_signal_strict__ni_k3_r2,R1,252,71,8,2,0.028169014084507043,0.25,all_gt
-bl_two_signal_strict__ni_k3_r2,R2,193,19,11,1,0.05263157894736842,0.09090909090909091,all_gt
+bl_two_signal_strict__ni_k3_r2,R2,193,19,9,1,0.05263157894736842,0.1111111111111111,all_gt
 bl_two_signal_strict__ni_k3_r2,R3,160,21,8,1,0.047619047619047616,0.125,all_gt
 bl_two_signal_strict__ni_k3_r2,R4,136,40,12,1,0.025,0.08333333333333333,all_gt
-bl_two_signal_strict__ni_k3_r2,R5,173,66,20,7,0.10606060606060606,0.35,all_gt
+bl_two_signal_strict__ni_k3_r2,R5,173,66,19,7,0.10606060606060606,0.3684210526315789,all_gt
 bl_two_signal_strict__ni_k3_r2,L1,217,10,5,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k3_r2,L2,188,6,11,0,0.0,0.0,assigned_gt
+bl_two_signal_strict__ni_k3_r2,L2,188,6,10,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r2,L3,95,5,10,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r2,L4,30,5,4,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r2,L5,225,18,30,7,0.3888888888888889,0.23333333333333334,assigned_gt
 bl_two_signal_strict__ni_k3_r2,R1,190,9,8,2,0.2222222222222222,0.25,assigned_gt
-bl_two_signal_strict__ni_k3_r2,R2,182,8,11,1,0.125,0.09090909090909091,assigned_gt
+bl_two_signal_strict__ni_k3_r2,R2,182,8,9,1,0.125,0.1111111111111111,assigned_gt
 bl_two_signal_strict__ni_k3_r2,R3,146,7,8,1,0.14285714285714285,0.125,assigned_gt
 bl_two_signal_strict__ni_k3_r2,R4,118,22,12,1,0.045454545454545456,0.08333333333333333,assigned_gt
-bl_two_signal_strict__ni_k3_r2,R5,134,27,20,7,0.25925925925925924,0.35,assigned_gt
+bl_two_signal_strict__ni_k3_r2,R5,134,27,19,7,0.25925925925925924,0.3684210526315789,assigned_gt
 bl_two_signal_strict__ni_k3_r4,L1,252,45,10,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k3_r4,L2,207,25,15,0,0.0,0.0,all_gt
+bl_two_signal_strict__ni_k3_r4,L2,207,25,14,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r4,L3,110,20,10,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r4,L4,38,13,5,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k3_r4,L5,279,72,34,7,0.09722222222222222,0.20588235294117646,all_gt
 bl_two_signal_strict__ni_k3_r4,R1,252,71,9,2,0.028169014084507043,0.2222222222222222,all_gt
-bl_two_signal_strict__ni_k3_r4,R2,193,19,12,1,0.05263157894736842,0.08333333333333333,all_gt
+bl_two_signal_strict__ni_k3_r4,R2,193,19,10,1,0.05263157894736842,0.1,all_gt
 bl_two_signal_strict__ni_k3_r4,R3,160,21,11,1,0.047619047619047616,0.09090909090909091,all_gt
 bl_two_signal_strict__ni_k3_r4,R4,136,40,19,4,0.1,0.21052631578947367,all_gt
-bl_two_signal_strict__ni_k3_r4,R5,173,66,23,8,0.12121212121212122,0.34782608695652173,all_gt
+bl_two_signal_strict__ni_k3_r4,R5,173,66,22,8,0.12121212121212122,0.36363636363636365,all_gt
 bl_two_signal_strict__ni_k3_r4,L1,217,10,10,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k3_r4,L2,188,6,15,0,0.0,0.0,assigned_gt
+bl_two_signal_strict__ni_k3_r4,L2,188,6,14,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r4,L3,95,5,10,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r4,L4,30,5,5,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k3_r4,L5,225,18,34,7,0.3888888888888889,0.20588235294117646,assigned_gt
 bl_two_signal_strict__ni_k3_r4,R1,190,9,9,2,0.2222222222222222,0.2222222222222222,assigned_gt
-bl_two_signal_strict__ni_k3_r4,R2,182,8,12,1,0.125,0.08333333333333333,assigned_gt
+bl_two_signal_strict__ni_k3_r4,R2,182,8,10,1,0.125,0.1,assigned_gt
 bl_two_signal_strict__ni_k3_r4,R3,146,7,11,1,0.14285714285714285,0.09090909090909091,assigned_gt
 bl_two_signal_strict__ni_k3_r4,R4,118,22,19,4,0.18181818181818182,0.21052631578947367,assigned_gt
-bl_two_signal_strict__ni_k3_r4,R5,134,27,23,8,0.2962962962962963,0.34782608695652173,assigned_gt
+bl_two_signal_strict__ni_k3_r4,R5,134,27,22,8,0.2962962962962963,0.36363636363636365,assigned_gt
 bl_two_signal_strict__ni_k5_r1,L1,252,45,1,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r1,L2,207,25,10,0,0.0,0.0,all_gt
+bl_two_signal_strict__ni_k5_r1,L2,207,25,9,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r1,L3,110,20,7,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r1,L4,38,13,4,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r1,L5,279,72,28,7,0.09722222222222222,0.25,all_gt
 bl_two_signal_strict__ni_k5_r1,R1,252,71,2,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r1,R2,193,19,9,1,0.05263157894736842,0.1111111111111111,all_gt
+bl_two_signal_strict__ni_k5_r1,R2,193,19,7,1,0.05263157894736842,0.14285714285714285,all_gt
 bl_two_signal_strict__ni_k5_r1,R3,160,21,5,1,0.047619047619047616,0.2,all_gt
 bl_two_signal_strict__ni_k5_r1,R4,136,40,9,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r1,R5,173,66,15,7,0.10606060606060606,0.4666666666666667,all_gt
+bl_two_signal_strict__ni_k5_r1,R5,173,66,14,7,0.10606060606060606,0.5,all_gt
 bl_two_signal_strict__ni_k5_r1,L1,217,10,1,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r1,L2,188,6,10,0,0.0,0.0,assigned_gt
+bl_two_signal_strict__ni_k5_r1,L2,188,6,9,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r1,L3,95,5,7,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r1,L4,30,5,4,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r1,L5,225,18,28,7,0.3888888888888889,0.25,assigned_gt
 bl_two_signal_strict__ni_k5_r1,R1,190,9,2,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r1,R2,182,8,9,1,0.125,0.1111111111111111,assigned_gt
+bl_two_signal_strict__ni_k5_r1,R2,182,8,7,1,0.125,0.14285714285714285,assigned_gt
 bl_two_signal_strict__ni_k5_r1,R3,146,7,5,1,0.14285714285714285,0.2,assigned_gt
 bl_two_signal_strict__ni_k5_r1,R4,118,22,9,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r1,R5,134,27,15,7,0.25925925925925924,0.4666666666666667,assigned_gt
+bl_two_signal_strict__ni_k5_r1,R5,134,27,14,7,0.25925925925925924,0.5,assigned_gt
 bl_two_signal_strict__ni_k5_r2,L1,252,45,1,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r2,L2,207,25,10,0,0.0,0.0,all_gt
+bl_two_signal_strict__ni_k5_r2,L2,207,25,9,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r2,L3,110,20,7,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r2,L4,38,13,4,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r2,L5,279,72,28,7,0.09722222222222222,0.25,all_gt
 bl_two_signal_strict__ni_k5_r2,R1,252,71,2,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r2,R2,193,19,9,1,0.05263157894736842,0.1111111111111111,all_gt
+bl_two_signal_strict__ni_k5_r2,R2,193,19,7,1,0.05263157894736842,0.14285714285714285,all_gt
 bl_two_signal_strict__ni_k5_r2,R3,160,21,5,1,0.047619047619047616,0.2,all_gt
 bl_two_signal_strict__ni_k5_r2,R4,136,40,9,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r2,R5,173,66,15,7,0.10606060606060606,0.4666666666666667,all_gt
+bl_two_signal_strict__ni_k5_r2,R5,173,66,14,7,0.10606060606060606,0.5,all_gt
 bl_two_signal_strict__ni_k5_r2,L1,217,10,1,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r2,L2,188,6,10,0,0.0,0.0,assigned_gt
+bl_two_signal_strict__ni_k5_r2,L2,188,6,9,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r2,L3,95,5,7,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r2,L4,30,5,4,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r2,L5,225,18,28,7,0.3888888888888889,0.25,assigned_gt
 bl_two_signal_strict__ni_k5_r2,R1,190,9,2,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r2,R2,182,8,9,1,0.125,0.1111111111111111,assigned_gt
+bl_two_signal_strict__ni_k5_r2,R2,182,8,7,1,0.125,0.14285714285714285,assigned_gt
 bl_two_signal_strict__ni_k5_r2,R3,146,7,5,1,0.14285714285714285,0.2,assigned_gt
 bl_two_signal_strict__ni_k5_r2,R4,118,22,9,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r2,R5,134,27,15,7,0.25925925925925924,0.4666666666666667,assigned_gt
+bl_two_signal_strict__ni_k5_r2,R5,134,27,14,7,0.25925925925925924,0.5,assigned_gt
 bl_two_signal_strict__ni_k5_r4,L1,252,45,1,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r4,L2,207,25,10,0,0.0,0.0,all_gt
+bl_two_signal_strict__ni_k5_r4,L2,207,25,9,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r4,L3,110,20,7,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r4,L4,38,13,4,0,0.0,0.0,all_gt
 bl_two_signal_strict__ni_k5_r4,L5,279,72,28,7,0.09722222222222222,0.25,all_gt
 bl_two_signal_strict__ni_k5_r4,R1,252,71,2,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r4,R2,193,19,9,1,0.05263157894736842,0.1111111111111111,all_gt
+bl_two_signal_strict__ni_k5_r4,R2,193,19,7,1,0.05263157894736842,0.14285714285714285,all_gt
 bl_two_signal_strict__ni_k5_r4,R3,160,21,5,1,0.047619047619047616,0.2,all_gt
 bl_two_signal_strict__ni_k5_r4,R4,136,40,9,0,0.0,0.0,all_gt
-bl_two_signal_strict__ni_k5_r4,R5,173,66,15,7,0.10606060606060606,0.4666666666666667,all_gt
+bl_two_signal_strict__ni_k5_r4,R5,173,66,14,7,0.10606060606060606,0.5,all_gt
 bl_two_signal_strict__ni_k5_r4,L1,217,10,1,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r4,L2,188,6,10,0,0.0,0.0,assigned_gt
+bl_two_signal_strict__ni_k5_r4,L2,188,6,9,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r4,L3,95,5,7,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r4,L4,30,5,4,0,0.0,0.0,assigned_gt
 bl_two_signal_strict__ni_k5_r4,L5,225,18,28,7,0.3888888888888889,0.25,assigned_gt
 bl_two_signal_strict__ni_k5_r4,R1,190,9,2,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r4,R2,182,8,9,1,0.125,0.1111111111111111,assigned_gt
+bl_two_signal_strict__ni_k5_r4,R2,182,8,7,1,0.125,0.14285714285714285,assigned_gt
 bl_two_signal_strict__ni_k5_r4,R3,146,7,5,1,0.14285714285714285,0.2,assigned_gt
 bl_two_signal_strict__ni_k5_r4,R4,118,22,9,0,0.0,0.0,assigned_gt
-bl_two_signal_strict__ni_k5_r4,R5,134,27,15,7,0.25925925925925924,0.4666666666666667,assigned_gt
+bl_two_signal_strict__ni_k5_r4,R5,134,27,14,7,0.25925925925925924,0.5,assigned_gt
 wl_model_agreement__ni_k2_r1,L1,252,45,94,7,0.15555555555555556,0.07446808510638298,all_gt
 wl_model_agreement__ni_k2_r1,L2,207,25,158,4,0.16,0.02531645569620253,all_gt
 wl_model_agreement__ni_k2_r1,L3,110,20,90,4,0.2,0.044444444444444446,all_gt
@@ -7057,221 +7070,8 @@ hy_hierarchical__ni_k5_r4,R5,134,27,24,9,0.3333333333333333,0.375,assigned_gt
 
 ### Predicted-finger workload table (all ten fingers)
 
-This table has exactly 2,288 rows: 208 set IDs (189 strategy × fixed-Noinfo
-combinations plus 19 standalone/base sets), with 11 rows per set (ten fingers
-plus the generated `NA` row).
-
-```tsv
+```csv
 set_id,predicted_finger_id,eligible_notes,hard_count,hard_percentage
-mandatory_missing,L1,56961,0,0.0
-mandatory_missing,L2,42151,0,0.0
-mandatory_missing,L3,32568,0,0.0
-mandatory_missing,L4,17383,0,0.0
-mandatory_missing,L5,41112,0,0.0
-mandatory_missing,R1,65498,0,0.0
-mandatory_missing,R2,58395,0,0.0
-mandatory_missing,R3,48125,0,0.0
-mandatory_missing,R4,31856,0,0.0
-mandatory_missing,R5,40324,0,0.0
-mandatory_missing,NA,0,0,
-legacy_current_default,L1,56961,1796,0.03153034532399361
-legacy_current_default,L2,42151,3694,0.0876373039785533
-legacy_current_default,L3,32568,3734,0.1146524195529354
-legacy_current_default,L4,17383,2484,0.14289823390669046
-legacy_current_default,L5,41112,3892,0.09466822338976455
-legacy_current_default,R1,65498,1801,0.02749702280985679
-legacy_current_default,R2,58395,5509,0.09434026885863515
-legacy_current_default,R3,48125,5447,0.11318441558441558
-legacy_current_default,R4,31856,3638,0.11420140632847815
-legacy_current_default,R5,40324,3005,0.07452137684753497
-legacy_current_default,NA,0,0,
-bl_span_practical,L1,56961,4550,0.07987921560365864
-bl_span_practical,L2,42151,3918,0.09295153139901782
-bl_span_practical,L3,32568,4050,0.12435519528371408
-bl_span_practical,L4,17383,3486,0.20054075821204626
-bl_span_practical,L5,41112,8177,0.1988956995524421
-bl_span_practical,R1,65498,1960,0.029924577849705335
-bl_span_practical,R2,58395,3188,0.05459371521534378
-bl_span_practical,R3,48125,3512,0.07297662337662338
-bl_span_practical,R4,31856,3060,0.0960572576594676
-bl_span_practical,R5,40324,3542,0.08783850808451542
-bl_span_practical,NA,0,0,
-bl_span_comfortable,L1,56961,6793,0.11925703551552817
-bl_span_comfortable,L2,42151,7004,0.16616450380773884
-bl_span_comfortable,L3,32568,7644,0.23470891672807664
-bl_span_comfortable,L4,17383,4986,0.2868319622619801
-bl_span_comfortable,L5,41112,11217,0.27284004670169293
-bl_span_comfortable,R1,65498,4299,0.06563559192647103
-bl_span_comfortable,R2,58395,7165,0.12269886120387019
-bl_span_comfortable,R3,48125,7627,0.1584831168831169
-bl_span_comfortable,R4,31856,6156,0.19324460070316424
-bl_span_comfortable,R5,40324,6415,0.15908640015871442
-bl_span_comfortable,NA,0,0,
-bl_span_relative,L1,56961,22719,0.39885184599989465
-bl_span_relative,L2,42151,18632,0.442029845080781
-bl_span_relative,L3,32568,14112,0.4333087693441415
-bl_span_relative,L4,17383,8160,0.4694241500316401
-bl_span_relative,L5,41112,23168,0.5635337614321853
-bl_span_relative,R1,65498,24498,0.3740266878377966
-bl_span_relative,R2,58395,20239,0.346587892799041
-bl_span_relative,R3,48125,18462,0.38362597402597404
-bl_span_relative,R4,31856,12877,0.4042252636865897
-bl_span_relative,R5,40324,19871,0.4927834540224184
-bl_span_relative,NA,0,0,
-bl_crossing,L1,56961,0,0.0
-bl_crossing,L2,42151,914,0.021683945813859695
-bl_crossing,L3,32568,1323,0.04062269712601326
-bl_crossing,L4,17383,1052,0.060518897773686936
-bl_crossing,L5,41112,1487,0.036169488227281575
-bl_crossing,R1,65498,0,0.0
-bl_crossing,R2,58395,1191,0.02039558181351143
-bl_crossing,R3,48125,1477,0.03069090909090909
-bl_crossing,R4,31856,1179,0.03701029633350075
-bl_crossing,R5,40324,1084,0.026882253744668187
-bl_crossing,NA,0,0,
-bl_step_crossing,L1,56961,0,0.0
-bl_step_crossing,L2,42151,266,0.006310645061801618
-bl_step_crossing,L3,32568,448,0.013755833947433063
-bl_step_crossing,L4,17383,280,0.016107691422654318
-bl_step_crossing,L5,41112,332,0.00807550107024713
-bl_step_crossing,R1,65498,0,0.0
-bl_step_crossing,R2,58395,485,0.00830550560835688
-bl_step_crossing,R3,48125,707,0.014690909090909091
-bl_step_crossing,R4,31856,589,0.01848945253641386
-bl_step_crossing,R5,40324,524,0.012994742585061007
-bl_step_crossing,NA,0,0,
-bl_rate_q995,L1,56961,929,0.016309404680395358
-bl_rate_q995,L2,42151,163,0.0038670494175701642
-bl_rate_q995,L3,32568,109,0.003346843527388848
-bl_rate_q995,L4,17383,116,0.006673186446528217
-bl_rate_q995,L5,41112,474,0.011529480443666083
-bl_rate_q995,R1,65498,1044,0.015939417997496107
-bl_rate_q995,R2,58395,228,0.0039044438736193167
-bl_rate_q995,R3,48125,295,0.00612987012987013
-bl_rate_q995,R4,31856,401,0.01258789552988448
-bl_rate_q995,R5,40324,986,0.024451939291736932
-bl_rate_q995,NA,0,0,
-bl_rate_q990,L1,56961,1193,0.020944154772563683
-bl_rate_q990,L2,42151,224,0.00531422742046452
-bl_rate_q990,L3,32568,146,0.004482928027511668
-bl_rate_q990,L4,17383,173,0.009952252200425704
-bl_rate_q990,L5,41112,668,0.016248297334111695
-bl_rate_q990,R1,65498,1493,0.02279458914776024
-bl_rate_q990,R2,58395,343,0.0058737905642606385
-bl_rate_q990,R3,48125,379,0.007875324675324676
-bl_rate_q990,R4,31856,518,0.01626067302862883
-bl_rate_q990,R5,40324,1214,0.030106140263862713
-bl_rate_q990,NA,0,0,
-bl_rate_q975,L1,56961,2332,0.04094029248082021
-bl_rate_q975,L2,42151,692,0.016417166852506465
-bl_rate_q975,L3,32568,524,0.016089412920658314
-bl_rate_q975,L4,17383,386,0.02220560317551631
-bl_rate_q975,L5,41112,1441,0.035050593500681064
-bl_rate_q975,R1,65498,3350,0.051146599896180034
-bl_rate_q975,R2,58395,1469,0.02515626337871393
-bl_rate_q975,R3,48125,1127,0.023418181818181817
-bl_rate_q975,R4,31856,1050,0.03296082370668006
-bl_rate_q975,R5,40324,2284,0.05664120622954072
-bl_rate_q975,NA,0,0,
-bl_hmm_disagreement,L1,56961,21312,0.37415073471322485
-bl_hmm_disagreement,L2,42151,33631,0.797869564185903
-bl_hmm_disagreement,L3,32568,29571,0.9079771554900515
-bl_hmm_disagreement,L4,17383,16884,0.9712937927860553
-bl_hmm_disagreement,L5,41112,22011,0.5353911266783421
-bl_hmm_disagreement,R1,65498,29762,0.4543955540627195
-bl_hmm_disagreement,R2,58395,37947,0.6498330336501413
-bl_hmm_disagreement,R3,48125,39820,0.8274285714285714
-bl_hmm_disagreement,R4,31856,28689,0.9005838774485183
-bl_hmm_disagreement,R5,40324,19913,0.49382501735938894
-bl_hmm_disagreement,NA,0,0,
-bl_practical_or_rate995,L1,56961,5479,0.096188620284054
-bl_practical_or_rate995,L2,42151,4080,0.09679485658703234
-bl_practical_or_rate995,L3,32568,4159,0.12770203881110292
-bl_practical_or_rate995,L4,17383,3602,0.20721394465857446
-bl_practical_or_rate995,L5,41112,8651,0.21042517999610819
-bl_practical_or_rate995,R1,65498,3001,0.04581819292192128
-bl_practical_or_rate995,R2,58395,3413,0.0584467848274681
-bl_practical_or_rate995,R3,48125,3806,0.07908571428571429
-bl_practical_or_rate995,R4,31856,3454,0.10842541436464088
-bl_practical_or_rate995,R5,40324,4527,0.11226564824918163
-bl_practical_or_rate995,NA,0,0,
-bl_practical_or_crossing,L1,56961,4550,0.07987921560365864
-bl_practical_or_crossing,L2,42151,3918,0.09295153139901782
-bl_practical_or_crossing,L3,32568,4050,0.12435519528371408
-bl_practical_or_crossing,L4,17383,3486,0.20054075821204626
-bl_practical_or_crossing,L5,41112,8177,0.1988956995524421
-bl_practical_or_crossing,R1,65498,1960,0.029924577849705335
-bl_practical_or_crossing,R2,58395,3188,0.05459371521534378
-bl_practical_or_crossing,R3,48125,3512,0.07297662337662338
-bl_practical_or_crossing,R4,31856,3060,0.0960572576594676
-bl_practical_or_crossing,R5,40324,3542,0.08783850808451542
-bl_practical_or_crossing,NA,0,0,
-bl_two_signal_strict,L1,56961,1701,0.029862537525675463
-bl_two_signal_strict,L2,42151,3620,0.08588171099143556
-bl_two_signal_strict,L3,32568,4035,0.12389462048636699
-bl_two_signal_strict,L4,17383,3567,0.2052004832307427
-bl_two_signal_strict,L5,41112,4544,0.1105273399494065
-bl_two_signal_strict,R1,65498,1113,0.016992885278939815
-bl_two_signal_strict,R2,58395,2733,0.04680195222193681
-bl_two_signal_strict,R3,48125,3602,0.07484675324675324
-bl_two_signal_strict,R4,31856,3341,0.10487820190858865
-bl_two_signal_strict,R5,40324,2810,0.06968554706874318
-bl_two_signal_strict,NA,0,0,
-wl_model_agreement,L1,56961,21312,0.37415073471322485
-wl_model_agreement,L2,42151,33631,0.797869564185903
-wl_model_agreement,L3,32568,29571,0.9079771554900515
-wl_model_agreement,L4,17383,16884,0.9712937927860553
-wl_model_agreement,L5,41112,22011,0.5353911266783421
-wl_model_agreement,R1,65498,29762,0.4543955540627195
-wl_model_agreement,R2,58395,37947,0.6498330336501413
-wl_model_agreement,R3,48125,39820,0.8274285714285714
-wl_model_agreement,R4,31856,28689,0.9005838774485183
-wl_model_agreement,R5,40324,19913,0.49382501735938894
-wl_model_agreement,NA,0,0,
-wl_strict_obvious,L1,56961,36926,0.6482681132704833
-wl_strict_obvious,L2,42151,36956,0.8767526274584233
-wl_strict_obvious,L3,32568,30914,0.9492139523458609
-wl_strict_obvious,L4,17383,17167,0.9875740666168096
-wl_strict_obvious,L5,41112,34893,0.8487302977232924
-wl_strict_obvious,R1,65498,46146,0.70454059665944
-wl_strict_obvious,R2,58395,44980,0.7702714273482318
-wl_strict_obvious,R3,48125,43009,0.8936935064935065
-wl_strict_obvious,R4,31856,30115,0.9453478151682572
-wl_strict_obvious,R5,40324,30642,0.7598948517012201
-wl_strict_obvious,NA,0,0,
-hy_direct_plus_corroborated,L1,56961,4811,0.08446129808114324
-hy_direct_plus_corroborated,L2,42151,4060,0.09632037199591943
-hy_direct_plus_corroborated,L3,32568,4181,0.12837754851387864
-hy_direct_plus_corroborated,L4,17383,3651,0.21003279065753896
-hy_direct_plus_corroborated,L5,41112,8304,0.20198482194979567
-hy_direct_plus_corroborated,R1,65498,2105,0.03213838590491313
-hy_direct_plus_corroborated,R2,58395,3401,0.05824128778148814
-hy_direct_plus_corroborated,R3,48125,3837,0.07972987012987014
-hy_direct_plus_corroborated,R4,31856,3483,0.10933576092415871
-hy_direct_plus_corroborated,R5,40324,4095,0.10155242535462752
-hy_direct_plus_corroborated,NA,0,0,
-hy_two_of_three_families,L1,56961,2373,0.0416600832148312
-hy_two_of_three_families,L2,42151,6061,0.14379255533676544
-hy_two_of_three_families,L3,32568,7182,0.2205232129697863
-hy_two_of_three_families,L4,17383,4978,0.2863717425070471
-hy_two_of_three_families,L5,41112,5552,0.13504572874100018
-hy_two_of_three_families,R1,65498,2132,0.03255061223243458
-hy_two_of_three_families,R2,58395,5152,0.08822673174073123
-hy_two_of_three_families,R3,48125,6806,0.14142337662337662
-hy_two_of_three_families,R4,31856,5907,0.1854281767955801
-hy_two_of_three_families,R5,40324,3605,0.08940085308997123
-hy_two_of_three_families,NA,0,0,
-hy_hierarchical,L1,56961,5454,0.0957497234950229
-hy_hierarchical,L2,42151,6649,0.1577424023154848
-hy_hierarchical,L3,32568,7431,0.22816875460574798
-hy_hierarchical,L4,17383,5087,0.292642236668009
-hy_hierarchical,L5,41112,9835,0.23922455730686903
-hy_hierarchical,R1,65498,3075,0.04694799841216526
-hy_hierarchical,R2,58395,6122,0.10483774295744498
-hy_hierarchical,R3,48125,7231,0.15025454545454545
-hy_hierarchical,R4,31856,6130,0.1924284279256655
-hy_hierarchical,R5,40324,5211,0.12922825116555897
-hy_hierarchical,NA,0,0,
 ni_k2_r1,L1,56961,2716,0.047681747160337774
 ni_k2_r1,L2,42151,2047,0.048563497900405685
 ni_k2_r1,L3,32568,1613,0.04952714320805699
@@ -7966,202 +7766,202 @@ bl_span_relative__ni_k5_r4,R4,31856,12960,0.40683073832245104
 bl_span_relative__ni_k5_r4,R5,40324,19976,0.49538736236484476
 bl_span_relative__ni_k5_r4,NA,0,0,
 bl_crossing__ni_k2_r1,L1,56961,2716,0.047681747160337774
-bl_crossing__ni_k2_r1,L2,42151,2871,0.06811226305425731
-bl_crossing__ni_k2_r1,L3,32568,2827,0.08680299680668141
-bl_crossing__ni_k2_r1,L4,17383,2025,0.11649312546741068
-bl_crossing__ni_k2_r1,L5,41112,3402,0.08274956217162872
+bl_crossing__ni_k2_r1,L2,42151,2751,0.06526535550757989
+bl_crossing__ni_k2_r1,L3,32568,2693,0.08268852861704741
+bl_crossing__ni_k2_r1,L4,17383,1905,0.10958982914341599
+bl_crossing__ni_k2_r1,L5,41112,3110,0.07564701303755594
 bl_crossing__ni_k2_r1,R1,65498,3555,0.05427646645699105
-bl_crossing__ni_k2_r1,R2,58395,3659,0.06265947427005737
-bl_crossing__ni_k2_r1,R3,48125,3541,0.07357922077922079
-bl_crossing__ni_k2_r1,R4,31856,2829,0.088805876443998
-bl_crossing__ni_k2_r1,R5,40324,3028,0.0750917567701617
+bl_crossing__ni_k2_r1,R2,58395,3521,0.06029625824128778
+bl_crossing__ni_k2_r1,R3,48125,3402,0.0706909090909091
+bl_crossing__ni_k2_r1,R4,31856,2691,0.08447388247112005
+bl_crossing__ni_k2_r1,R5,40324,2871,0.07119829382005753
 bl_crossing__ni_k2_r1,NA,0,0,
 bl_crossing__ni_k2_r2,L1,56961,5129,0.09004406523761872
-bl_crossing__ni_k2_r2,L2,42151,4617,0.1095347678584138
-bl_crossing__ni_k2_r2,L3,32568,4177,0.12825472856791942
-bl_crossing__ni_k2_r2,L4,17383,2848,0.16383823275614107
-bl_crossing__ni_k2_r2,L5,41112,5086,0.12371083868456899
+bl_crossing__ni_k2_r2,L2,42151,4504,0.1068539299186259
+bl_crossing__ni_k2_r2,L3,32568,4052,0.1244166052566937
+bl_crossing__ni_k2_r2,L4,17383,2740,0.15762526606454583
+bl_crossing__ni_k2_r2,L5,41112,4813,0.11707044172017902
 bl_crossing__ni_k2_r2,R1,65498,6397,0.09766710433906378
-bl_crossing__ni_k2_r2,R2,58395,6020,0.10309101806661529
-bl_crossing__ni_k2_r2,R3,48125,5446,0.11316363636363637
-bl_crossing__ni_k2_r2,R4,31856,4261,0.133758161727775
-bl_crossing__ni_k2_r2,R5,40324,4763,0.11811824223787323
+bl_crossing__ni_k2_r2,R2,58395,5890,0.10086480006849902
+bl_crossing__ni_k2_r2,R3,48125,5315,0.11044155844155844
+bl_crossing__ni_k2_r2,R4,31856,4130,0.12964590657960823
+bl_crossing__ni_k2_r2,R5,40324,4625,0.11469596270211288
 bl_crossing__ni_k2_r2,NA,0,0,
 bl_crossing__ni_k2_r4,L1,56961,9185,0.16125068029002299
-bl_crossing__ni_k2_r4,L2,42151,7595,0.18018552347512515
-bl_crossing__ni_k2_r4,L3,32568,6483,0.19906042741341193
-bl_crossing__ni_k2_r4,L4,17383,4213,0.24236322844158084
-bl_crossing__ni_k2_r4,L5,41112,7946,0.1932769021210352
+bl_crossing__ni_k2_r4,L2,42151,7498,0.17788427320822756
+bl_crossing__ni_k2_r4,L3,32568,6379,0.1958671088184721
+bl_crossing__ni_k2_r4,L4,17383,4116,0.23678306391301845
+bl_crossing__ni_k2_r4,L5,41112,7706,0.1874391905039891
 bl_crossing__ni_k2_r4,R1,65498,11175,0.17061589666860058
-bl_crossing__ni_k2_r4,R2,58395,9928,0.1700145560407569
-bl_crossing__ni_k2_r4,R3,48125,8784,0.1825246753246753
-bl_crossing__ni_k2_r4,R4,31856,6643,0.20853214465092917
-bl_crossing__ni_k2_r4,R5,40324,7728,0.1916476540025791
+bl_crossing__ni_k2_r4,R2,58395,9814,0.16806233410394725
+bl_crossing__ni_k2_r4,R3,48125,8669,0.18013506493506493
+bl_crossing__ni_k2_r4,R4,31856,6528,0.2049221496735309
+bl_crossing__ni_k2_r4,R5,40324,7603,0.18854776311873822
 bl_crossing__ni_k2_r4,NA,0,0,
 bl_crossing__ni_k3_r1,L1,56961,636,0.011165534312950967
-bl_crossing__ni_k3_r1,L2,42151,1417,0.03361723328034922
-bl_crossing__ni_k3_r1,L3,32568,1703,0.05229059199213952
-bl_crossing__ni_k3_r1,L4,17383,1334,0.0767416441350745
-bl_crossing__ni_k3_r1,L5,41112,1970,0.04791788285658689
+bl_crossing__ni_k3_r1,L2,42151,1285,0.030485634979004056
+bl_crossing__ni_k3_r1,L3,32568,1560,0.047899778924097275
+bl_crossing__ni_k3_r1,L4,17383,1202,0.06914801817868033
+bl_crossing__ni_k3_r1,L5,41112,1665,0.04049912434325744
 bl_crossing__ni_k3_r1,R1,65498,899,0.013725609942288315
-bl_crossing__ni_k3_r1,R2,58395,1761,0.030156691497559722
-bl_crossing__ni_k3_r1,R3,48125,1968,0.040893506493506496
-bl_crossing__ni_k3_r1,R4,31856,1571,0.04931567051732798
-bl_crossing__ni_k3_r1,R5,40324,1559,0.03866183910326357
+bl_crossing__ni_k3_r1,R2,58395,1611,0.02758797842281017
+bl_crossing__ni_k3_r1,R3,48125,1817,0.037755844155844154
+bl_crossing__ni_k3_r1,R4,31856,1419,0.04454419889502762
+bl_crossing__ni_k3_r1,R5,40324,1388,0.03442118837416923
 bl_crossing__ni_k3_r1,NA,0,0,
 bl_crossing__ni_k3_r2,L1,56961,1299,0.022805077158055513
-bl_crossing__ni_k3_r2,L2,42151,1880,0.044601551564612936
-bl_crossing__ni_k3_r2,L3,32568,2087,0.06408130680422501
-bl_crossing__ni_k3_r2,L4,17383,1575,0.09060576425243054
-bl_crossing__ni_k3_r2,L5,41112,2398,0.05832846857365246
+bl_crossing__ni_k3_r2,L2,42151,1753,0.041588574411046
+bl_crossing__ni_k3_r2,L3,32568,1948,0.05981331368214198
+bl_crossing__ni_k3_r2,L4,17383,1451,0.08347235805096934
+bl_crossing__ni_k3_r2,L5,41112,2099,0.05105565285074917
 bl_crossing__ni_k3_r2,R1,65498,1648,0.025161073620568568
-bl_crossing__ni_k3_r2,R2,58395,2346,0.04017467248908297
-bl_crossing__ni_k3_r2,R3,48125,2463,0.05117922077922078
-bl_crossing__ni_k3_r2,R4,31856,1948,0.06115017579105977
-bl_crossing__ni_k3_r2,R5,40324,2030,0.050342227953576034
+bl_crossing__ni_k3_r2,R2,58395,2199,0.03765733367582841
+bl_crossing__ni_k3_r2,R3,48125,2314,0.04808311688311688
+bl_crossing__ni_k3_r2,R4,31856,1803,0.05659844299347062
+bl_crossing__ni_k3_r2,R5,40324,1869,0.04634956849518897
 bl_crossing__ni_k3_r2,NA,0,0,
 bl_crossing__ni_k3_r4,L1,56961,2472,0.04339811449939432
-bl_crossing__ni_k3_r4,L2,42151,2753,0.06531280396669119
-bl_crossing__ni_k3_r4,L3,32568,2743,0.08422377794153771
-bl_crossing__ni_k3_r4,L4,17383,2034,0.11701087269171029
-bl_crossing__ni_k3_r4,L5,41112,3213,0.0781523642732049
+bl_crossing__ni_k3_r4,L2,42151,2634,0.06248962064956941
+bl_crossing__ni_k3_r4,L3,32568,2612,0.08020142471137312
+bl_crossing__ni_k3_r4,L4,17383,1914,0.11010757636771558
+bl_crossing__ni_k3_r4,L5,41112,2924,0.0711227865343452
 bl_crossing__ni_k3_r4,R1,65498,3054,0.04662737793520413
-bl_crossing__ni_k3_r4,R2,58395,3410,0.05839541056597312
-bl_crossing__ni_k3_r4,R3,48125,3454,0.07177142857142857
-bl_crossing__ni_k3_r4,R4,31856,2678,0.08406579608237066
-bl_crossing__ni_k3_r4,R5,40324,2905,0.07204146414046225
+bl_crossing__ni_k3_r4,R2,58395,3268,0.055963695521876876
+bl_crossing__ni_k3_r4,R3,48125,3310,0.06877922077922077
+bl_crossing__ni_k3_r4,R4,31856,2535,0.07957684580612757
+bl_crossing__ni_k3_r4,R5,40324,2751,0.06822239857157028
 bl_crossing__ni_k3_r4,NA,0,0,
 bl_crossing__ni_k5_r1,L1,56961,71,0.0012464668808482998
-bl_crossing__ni_k5_r1,L2,42151,961,0.02279898460297502
-bl_crossing__ni_k5_r1,L3,32568,1379,0.042342176369442396
-bl_crossing__ni_k5_r1,L4,17383,1092,0.06281999654835184
-bl_crossing__ni_k5_r1,L5,41112,1539,0.03743432574430823
+bl_crossing__ni_k5_r1,L2,42151,829,0.019667386301629855
+bl_crossing__ni_k5_r1,L3,32568,1230,0.037767133382461314
+bl_crossing__ni_k5_r1,L4,17383,959,0.05516884312259104
+bl_crossing__ni_k5_r1,L5,41112,1231,0.029942595835765713
 bl_crossing__ni_k5_r1,R1,65498,85,0.001297749549604568
-bl_crossing__ni_k5_r1,R2,58395,1237,0.02118332048976796
-bl_crossing__ni_k5_r1,R3,48125,1526,0.03170909090909091
-bl_crossing__ni_k5_r1,R4,31856,1214,0.038108990457056756
-bl_crossing__ni_k5_r1,R5,40324,1134,0.028122210098204543
+bl_crossing__ni_k5_r1,R2,58395,1084,0.018563233153523418
+bl_crossing__ni_k5_r1,R3,48125,1374,0.02855064935064935
+bl_crossing__ni_k5_r1,R4,31856,1058,0.03321195379206429
+bl_crossing__ni_k5_r1,R5,40324,956,0.023707965479615116
 bl_crossing__ni_k5_r1,NA,0,0,
 bl_crossing__ni_k5_r2,L1,56961,149,0.002615824862625305
-bl_crossing__ni_k5_r2,L2,42151,1012,0.024008920310312924
-bl_crossing__ni_k5_r2,L3,32568,1429,0.043877425693932694
-bl_crossing__ni_k5_r2,L4,17383,1122,0.06454582062935052
-bl_crossing__ni_k5_r2,L5,41112,1584,0.03852889667250438
+bl_crossing__ni_k5_r2,L2,42151,880,0.020877322008967757
+bl_crossing__ni_k5_r2,L3,32568,1281,0.03933308769344142
+bl_crossing__ni_k5_r2,L4,17383,992,0.05706724961168958
+bl_crossing__ni_k5_r2,L5,41112,1277,0.03106149056236622
 bl_crossing__ni_k5_r2,R1,65498,172,0.0026260343827292434
-bl_crossing__ni_k5_r2,R2,58395,1293,0.022142306704341124
-bl_crossing__ni_k5_r2,R3,48125,1583,0.032893506493506496
-bl_crossing__ni_k5_r2,R4,31856,1256,0.03942742340532396
-bl_crossing__ni_k5_r2,R5,40324,1177,0.02918857256224581
+bl_crossing__ni_k5_r2,R2,58395,1141,0.01953934412192825
+bl_crossing__ni_k5_r2,R3,48125,1431,0.029735064935064934
+bl_crossing__ni_k5_r2,R4,31856,1100,0.034530386740331494
+bl_crossing__ni_k5_r2,R5,40324,1002,0.024848725324868565
 bl_crossing__ni_k5_r2,NA,0,0,
 bl_crossing__ni_k5_r4,L1,56961,257,0.0045118589912396204
-bl_crossing__ni_k5_r4,L2,42151,1098,0.02604920405209841
-bl_crossing__ni_k5_r4,L3,32568,1507,0.04627241464013756
-bl_crossing__ni_k5_r4,L4,17383,1171,0.06736466662831501
-bl_crossing__ni_k5_r4,L5,41112,1691,0.04113154310177077
+bl_crossing__ni_k5_r4,L2,42151,966,0.022917605750753245
+bl_crossing__ni_k5_r4,L3,32568,1360,0.04175878162613608
+bl_crossing__ni_k5_r4,L4,17383,1041,0.05988609561065409
+bl_crossing__ni_k5_r4,L5,41112,1385,0.03368846079003697
 bl_crossing__ni_k5_r4,R1,65498,333,0.005084124706097896
-bl_crossing__ni_k5_r4,R2,58395,1412,0.024180152410309103
-bl_crossing__ni_k5_r4,R3,48125,1715,0.03563636363636364
-bl_crossing__ni_k5_r4,R4,31856,1353,0.04247237569060774
-bl_crossing__ni_k5_r4,R5,40324,1281,0.03176768177760143
+bl_crossing__ni_k5_r4,R2,58395,1261,0.021594314581727888
+bl_crossing__ni_k5_r4,R3,48125,1565,0.03251948051948052
+bl_crossing__ni_k5_r4,R4,31856,1198,0.0376067302862883
+bl_crossing__ni_k5_r4,R5,40324,1109,0.027502231921436367
 bl_crossing__ni_k5_r4,NA,0,0,
 bl_step_crossing__ni_k2_r1,L1,56961,2716,0.047681747160337774
-bl_step_crossing__ni_k2_r1,L2,42151,2301,0.05458945220753956
-bl_step_crossing__ni_k2_r1,L3,32568,2040,0.06263817243920412
-bl_step_crossing__ni_k2_r1,L4,17383,1338,0.07697175401254099
-bl_step_crossing__ni_k2_r1,L5,41112,2350,0.05716092625024324
+bl_step_crossing__ni_k2_r1,L2,42151,2273,0.053925173779981496
+bl_step_crossing__ni_k2_r1,L3,32568,2014,0.061839842790469175
+bl_step_crossing__ni_k2_r1,L4,17383,1319,0.07587873209457516
+bl_step_crossing__ni_k2_r1,L5,41112,2309,0.05616365051566453
 bl_step_crossing__ni_k2_r1,R1,65498,3555,0.05427646645699105
-bl_step_crossing__ni_k2_r1,R2,58395,3038,0.05202500214059423
-bl_step_crossing__ni_k2_r1,R3,48125,2851,0.05924155844155844
-bl_step_crossing__ni_k2_r1,R4,31856,2307,0.07241963837267705
-bl_step_crossing__ni_k2_r1,R5,40324,2523,0.0625681975994445
+bl_step_crossing__ni_k2_r1,R2,58395,3010,0.051545509033307645
+bl_step_crossing__ni_k2_r1,R3,48125,2809,0.05836883116883117
+bl_step_crossing__ni_k2_r1,R4,31856,2263,0.07103842290306378
+bl_step_crossing__ni_k2_r1,R5,40324,2478,0.06145223688126178
 bl_step_crossing__ni_k2_r1,NA,0,0,
 bl_step_crossing__ni_k2_r2,L1,56961,5129,0.09004406523761872
-bl_step_crossing__ni_k2_r2,L2,42151,4098,0.09722189271903395
-bl_step_crossing__ni_k2_r2,L3,32568,3451,0.10596290837632032
-bl_step_crossing__ni_k2_r2,L4,17383,2216,0.1274808721164356
-bl_step_crossing__ni_k2_r2,L5,41112,4105,0.09984919244989297
+bl_step_crossing__ni_k2_r2,L2,42151,4072,0.09660506275058718
+bl_step_crossing__ni_k2_r2,L3,32568,3426,0.10519528371407516
+bl_step_crossing__ni_k2_r2,L4,17383,2199,0.12650290513720303
+bl_step_crossing__ni_k2_r2,L5,41112,4066,0.09890056431212298
 bl_step_crossing__ni_k2_r2,R1,65498,6397,0.09766710433906378
-bl_step_crossing__ni_k2_r2,R2,58395,5446,0.09326140936724035
-bl_step_crossing__ni_k2_r2,R3,48125,4801,0.09976103896103897
-bl_step_crossing__ni_k2_r2,R4,31856,3774,0.11847061778001004
-bl_step_crossing__ni_k2_r2,R5,40324,4302,0.10668584465826803
+bl_step_crossing__ni_k2_r2,R2,58395,5419,0.09279904101378543
+bl_step_crossing__ni_k2_r2,R3,48125,4762,0.09895064935064934
+bl_step_crossing__ni_k2_r2,R4,31856,3732,0.11715218483174285
+bl_step_crossing__ni_k2_r2,R5,40324,4261,0.10566908044836822
 bl_step_crossing__ni_k2_r2,NA,0,0,
 bl_step_crossing__ni_k2_r4,L1,56961,9185,0.16125068029002299
-bl_step_crossing__ni_k2_r4,L2,42151,7136,0.169296102109084
-bl_step_crossing__ni_k2_r4,L3,32568,5842,0.17937853107344634
-bl_step_crossing__ni_k2_r4,L4,17383,3655,0.21026290053500546
-bl_step_crossing__ni_k2_r4,L5,41112,7094,0.17255302588052152
+bl_step_crossing__ni_k2_r4,L2,42151,7117,0.16884534174752674
+bl_step_crossing__ni_k2_r4,L3,32568,5821,0.1787337263571604
+bl_step_crossing__ni_k2_r4,L4,17383,3638,0.20928493355577288
+bl_step_crossing__ni_k2_r4,L5,41112,7061,0.17175034053317767
 bl_step_crossing__ni_k2_r4,R1,65498,11175,0.17061589666860058
-bl_step_crossing__ni_k2_r4,R2,58395,9425,0.1614008048634301
-bl_step_crossing__ni_k2_r4,R3,48125,8218,0.17076363636363637
-bl_step_crossing__ni_k2_r4,R4,31856,6213,0.19503390256152686
-bl_step_crossing__ni_k2_r4,R5,40324,7331,0.18180240055550045
+bl_step_crossing__ni_k2_r4,R2,58395,9401,0.16098981077147015
+bl_step_crossing__ni_k2_r4,R3,48125,8185,0.17007792207792208
+bl_step_crossing__ni_k2_r4,R4,31856,6178,0.19393520843797088
+bl_step_crossing__ni_k2_r4,R5,40324,7294,0.18088483285388354
 bl_step_crossing__ni_k2_r4,NA,0,0,
 bl_step_crossing__ni_k3_r1,L1,56961,636,0.011165534312950967
-bl_step_crossing__ni_k3_r1,L2,42151,797,0.01890821095584921
-bl_step_crossing__ni_k3_r1,L3,32568,861,0.026436993367722917
-bl_step_crossing__ni_k3_r1,L4,17383,586,0.03371109704884082
-bl_step_crossing__ni_k3_r1,L5,41112,855,0.020796847635726794
+bl_step_crossing__ni_k3_r1,L2,42151,768,0.0182202082987355
+bl_step_crossing__ni_k3_r1,L3,32568,832,0.025546548759518548
+bl_step_crossing__ni_k3_r1,L4,17383,566,0.03256054766150837
+bl_step_crossing__ni_k3_r1,L5,41112,812,0.019750924304339366
 bl_step_crossing__ni_k3_r1,R1,65498,899,0.013725609942288315
-bl_step_crossing__ni_k3_r1,R2,58395,1080,0.018494734138196762
-bl_step_crossing__ni_k3_r1,R3,48125,1218,0.02530909090909091
-bl_step_crossing__ni_k3_r1,R4,31856,1001,0.03142265193370166
-bl_step_crossing__ni_k3_r1,R5,40324,1022,0.025344707866283105
+bl_step_crossing__ni_k3_r1,R2,58395,1048,0.017946742015583526
+bl_step_crossing__ni_k3_r1,R3,48125,1173,0.024374025974025975
+bl_step_crossing__ni_k3_r1,R4,31856,956,0.03001004520341537
+bl_step_crossing__ni_k3_r1,R5,40324,971,0.024079952385676024
 bl_step_crossing__ni_k3_r1,NA,0,0,
 bl_step_crossing__ni_k3_r2,L1,56961,1299,0.022805077158055513
-bl_step_crossing__ni_k3_r2,L2,42151,1275,0.030248392683447606
-bl_step_crossing__ni_k3_r2,L3,32568,1269,0.038964627855563747
-bl_step_crossing__ni_k3_r2,L4,17383,852,0.04901340390036242
-bl_step_crossing__ni_k3_r2,L5,41112,1303,0.03169390932087955
+bl_step_crossing__ni_k3_r2,L2,42151,1247,0.02958411425588954
+bl_step_crossing__ni_k3_r2,L3,32568,1241,0.03810488823384918
+bl_step_crossing__ni_k3_r2,L4,17383,833,0.04792038198239659
+bl_step_crossing__ni_k3_r2,L5,41112,1261,0.03067230978789648
 bl_step_crossing__ni_k3_r2,R1,65498,1648,0.025161073620568568
-bl_step_crossing__ni_k3_r2,R2,58395,1683,0.028820960698689956
-bl_step_crossing__ni_k3_r2,R3,48125,1732,0.03598961038961039
-bl_step_crossing__ni_k3_r2,R4,31856,1396,0.04382219989954796
-bl_step_crossing__ni_k3_r2,R5,40324,1506,0.03734748536851503
+bl_step_crossing__ni_k3_r2,R2,58395,1652,0.028290093329908384
+bl_step_crossing__ni_k3_r2,R3,48125,1688,0.035075324675324676
+bl_step_crossing__ni_k3_r2,R4,31856,1353,0.04247237569060774
+bl_step_crossing__ni_k3_r2,R5,40324,1458,0.036157127269120126
 bl_step_crossing__ni_k3_r2,NA,0,0,
 bl_step_crossing__ni_k3_r4,L1,56961,2472,0.04339811449939432
-bl_step_crossing__ni_k3_r4,L2,42151,2175,0.05160019928352827
-bl_step_crossing__ni_k3_r4,L3,32568,1956,0.06005895357406043
-bl_step_crossing__ni_k3_r4,L4,17383,1339,0.07702928148190762
-bl_step_crossing__ni_k3_r4,L5,41112,2157,0.052466433158201986
+bl_step_crossing__ni_k3_r4,L2,42151,2149,0.05098336931508149
+bl_step_crossing__ni_k3_r4,L3,32568,1929,0.05922991893883567
+bl_step_crossing__ni_k3_r4,L4,17383,1320,0.07593625956394179
+bl_step_crossing__ni_k3_r4,L5,41112,2117,0.05149348122202763
 bl_step_crossing__ni_k3_r4,R1,65498,3054,0.04662737793520413
-bl_step_crossing__ni_k3_r4,R2,58395,2767,0.047384193852213374
-bl_step_crossing__ni_k3_r4,R3,48125,2750,0.05714285714285714
-bl_step_crossing__ni_k3_r4,R4,31856,2149,0.06745981918633852
-bl_step_crossing__ni_k3_r4,R5,40324,2397,0.05944350758853288
+bl_step_crossing__ni_k3_r4,R2,58395,2737,0.046870451237263466
+bl_step_crossing__ni_k3_r4,R3,48125,2709,0.05629090909090909
+bl_step_crossing__ni_k3_r4,R4,31856,2107,0.06614138623807132
+bl_step_crossing__ni_k3_r4,R5,40324,2350,0.05827794861620871
 bl_step_crossing__ni_k3_r4,NA,0,0,
 bl_step_crossing__ni_k5_r1,L1,56961,71,0.0012464668808482998
-bl_step_crossing__ni_k5_r1,L2,42151,317,0.007520580769139522
-bl_step_crossing__ni_k5_r1,L3,32568,508,0.01559813313682142
-bl_step_crossing__ni_k5_r1,L4,17383,323,0.01858137260541909
-bl_step_crossing__ni_k5_r1,L5,41112,391,0.0095106051761043
+bl_step_crossing__ni_k5_r1,L2,42151,288,0.006832578112025812
+bl_step_crossing__ni_k5_r1,L3,32568,478,0.014676983542127242
+bl_step_crossing__ni_k5_r1,L4,17383,303,0.017430823218086637
+bl_step_crossing__ni_k5_r1,L5,41112,346,0.008416034247908153
 bl_step_crossing__ni_k5_r1,R1,65498,85,0.001297749549604568
-bl_step_crossing__ni_k5_r1,R2,58395,536,0.009178868053771726
-bl_step_crossing__ni_k5_r1,R3,48125,762,0.015833766233766235
-bl_step_crossing__ni_k5_r1,R4,31856,627,0.01968232044198895
-bl_step_crossing__ni_k5_r1,R5,40324,580,0.014383493701021724
+bl_step_crossing__ni_k5_r1,R2,58395,504,0.00863087593115849
+bl_step_crossing__ni_k5_r1,R3,48125,717,0.014898701298701298
+bl_step_crossing__ni_k5_r1,R4,31856,581,0.018238322451029635
+bl_step_crossing__ni_k5_r1,R5,40324,526,0.01304434083920246
 bl_step_crossing__ni_k5_r1,NA,0,0,
 bl_step_crossing__ni_k5_r2,L1,56961,149,0.002615824862625305
-bl_step_crossing__ni_k5_r2,L2,42151,371,0.008801689165144361
-bl_step_crossing__ni_k5_r2,L3,32568,560,0.01719479243429133
-bl_step_crossing__ni_k5_r2,L4,17383,357,0.020537306563884253
-bl_step_crossing__ni_k5_r2,L5,41112,438,0.010653823701109165
+bl_step_crossing__ni_k5_r2,L2,42151,342,0.008113686508030652
+bl_step_crossing__ni_k5_r2,L3,32568,531,0.016304347826086956
+bl_step_crossing__ni_k5_r2,L4,17383,337,0.019386757176551802
+bl_step_crossing__ni_k5_r2,L5,41112,393,0.009559252772913017
 bl_step_crossing__ni_k5_r2,R1,65498,172,0.0026260343827292434
-bl_step_crossing__ni_k5_r2,R2,58395,595,0.010189228529839884
-bl_step_crossing__ni_k5_r2,R3,48125,821,0.01705974025974026
-bl_step_crossing__ni_k5_r2,R4,31856,671,0.02106353591160221
-bl_step_crossing__ni_k5_r2,R5,40324,627,0.015549052673345899
+bl_step_crossing__ni_k5_r2,R2,58395,563,0.009641236407226646
+bl_step_crossing__ni_k5_r2,R3,48125,776,0.016124675324675326
+bl_step_crossing__ni_k5_r2,R4,31856,625,0.019619537920642895
+bl_step_crossing__ni_k5_r2,R5,40324,573,0.014209899811526634
 bl_step_crossing__ni_k5_r2,NA,0,0,
 bl_step_crossing__ni_k5_r4,L1,56961,257,0.0045118589912396204
-bl_step_crossing__ni_k5_r4,L2,42151,459,0.010889421366041138
-bl_step_crossing__ni_k5_r4,L3,32568,644,0.01977401129943503
-bl_step_crossing__ni_k5_r4,L4,17383,410,0.02358626244031525
-bl_step_crossing__ni_k5_r4,L5,41112,551,0.013402412920801712
+bl_step_crossing__ni_k5_r4,L2,42151,430,0.010201418708927427
+bl_step_crossing__ni_k5_r4,L3,32568,615,0.018883566691230657
+bl_step_crossing__ni_k5_r4,L4,17383,390,0.022435713052982798
+bl_step_crossing__ni_k5_r4,L5,41112,507,0.012332165791009923
 bl_step_crossing__ni_k5_r4,R1,65498,333,0.005084124706097896
-bl_step_crossing__ni_k5_r4,R2,58395,717,0.01227844849730285
-bl_step_crossing__ni_k5_r4,R3,48125,960,0.019948051948051947
-bl_step_crossing__ni_k5_r4,R4,31856,772,0.024234053239578102
-bl_step_crossing__ni_k5_r4,R5,40324,736,0.018252157524055155
+bl_step_crossing__ni_k5_r4,R2,58395,685,0.011730456374689615
+bl_step_crossing__ni_k5_r4,R3,48125,916,0.019033766233766233
+bl_step_crossing__ni_k5_r4,R4,31856,726,0.022790055248618785
+bl_step_crossing__ni_k5_r4,R5,40324,684,0.016962602916377342
 bl_step_crossing__ni_k5_r4,NA,0,0,
 bl_rate_q995__ni_k2_r1,L1,56961,3612,0.0634118080792121
 bl_rate_q995__ni_k2_r1,L2,42151,2206,0.05233565039975327
@@ -8758,103 +8558,103 @@ bl_practical_or_crossing__ni_k5_r4,R4,31856,3206,0.10064038171772978
 bl_practical_or_crossing__ni_k5_r4,R5,40324,3718,0.09220315444896339
 bl_practical_or_crossing__ni_k5_r4,NA,0,0,
 bl_two_signal_strict__ni_k2_r1,L1,56961,4284,0.07520935376836783
-bl_two_signal_strict__ni_k2_r1,L2,42151,5310,0.1259756589404759
-bl_two_signal_strict__ni_k2_r1,L3,32568,5273,0.16190739376074675
-bl_two_signal_strict__ni_k2_r1,L4,17383,4300,0.247368118276477
-bl_two_signal_strict__ni_k2_r1,L5,41112,6294,0.15309398715703446
+bl_two_signal_strict__ni_k2_r1,L2,42151,5290,0.125501174349363
+bl_two_signal_strict__ni_k2_r1,L3,32568,5266,0.1616924588553181
+bl_two_signal_strict__ni_k2_r1,L4,17383,4299,0.2473105908071104
+bl_two_signal_strict__ni_k2_r1,L5,41112,6197,0.15073457871181165
 bl_two_signal_strict__ni_k2_r1,R1,65498,4565,0.06969678463464533
-bl_two_signal_strict__ni_k2_r1,R2,58395,5054,0.08654850586522819
-bl_two_signal_strict__ni_k2_r1,R3,48125,5482,0.11391168831168831
-bl_two_signal_strict__ni_k2_r1,R4,31856,4783,0.15014439979909594
-bl_two_signal_strict__ni_k2_r1,R5,40324,4654,0.11541513738716397
+bl_two_signal_strict__ni_k2_r1,R2,58395,5020,0.08596626423495163
+bl_two_signal_strict__ni_k2_r1,R3,48125,5461,0.11347532467532467
+bl_two_signal_strict__ni_k2_r1,R4,31856,4763,0.14951657458563536
+bl_two_signal_strict__ni_k2_r1,R5,40324,4597,0.11400158714413253
 bl_two_signal_strict__ni_k2_r1,NA,0,0,
 bl_two_signal_strict__ni_k2_r2,L1,56961,6616,0.11614964624918804
-bl_two_signal_strict__ni_k2_r2,L2,42151,6867,0.16291428435861546
-bl_two_signal_strict__ni_k2_r2,L3,32568,6463,0.1984463276836158
-bl_two_signal_strict__ni_k2_r2,L4,17383,4946,0.2845308634873152
-bl_two_signal_strict__ni_k2_r2,L5,41112,7865,0.19130667445028215
+bl_two_signal_strict__ni_k2_r2,L2,42151,6848,0.16246352399705818
+bl_two_signal_strict__ni_k2_r2,L3,32568,6457,0.198262097764677
+bl_two_signal_strict__ni_k2_r2,L4,17383,4945,0.28447333601794855
+bl_two_signal_strict__ni_k2_r2,L5,41112,7777,0.18916618019069859
 bl_two_signal_strict__ni_k2_r2,R1,65498,7325,0.11183547589239366
-bl_two_signal_strict__ni_k2_r2,R2,58395,7304,0.12507920198647143
-bl_two_signal_strict__ni_k2_r2,R3,48125,7262,0.1508987012987013
-bl_two_signal_strict__ni_k2_r2,R4,31856,6046,0.18979156202913108
-bl_two_signal_strict__ni_k2_r2,R5,40324,6306,0.15638329530800515
+bl_two_signal_strict__ni_k2_r2,R2,58395,7272,0.12453120986385821
+bl_two_signal_strict__ni_k2_r2,R3,48125,7241,0.15046233766233766
+bl_two_signal_strict__ni_k2_r2,R4,31856,6027,0.18919512807634353
+bl_two_signal_strict__ni_k2_r2,R5,40324,6256,0.1551433389544688
 bl_two_signal_strict__ni_k2_r2,NA,0,0,
 bl_two_signal_strict__ni_k2_r4,L1,56961,10519,0.18467021295272204
-bl_two_signal_strict__ni_k2_r4,L2,42151,9594,0.22761025835685986
-bl_two_signal_strict__ni_k2_r4,L3,32568,8511,0.2613301400147384
-bl_two_signal_strict__ni_k2_r4,L4,17383,6034,0.34712075015820054
-bl_two_signal_strict__ni_k2_r4,L5,41112,10488,0.2551079976649154
+bl_two_signal_strict__ni_k2_r4,L2,42151,9576,0.22718322222485826
+bl_two_signal_strict__ni_k2_r4,L3,32568,8505,0.26114591009579957
+bl_two_signal_strict__ni_k2_r4,L4,17383,6033,0.34706322268883394
+bl_two_signal_strict__ni_k2_r4,L5,41112,10411,0.2532350651877797
 bl_two_signal_strict__ni_k2_r4,R1,65498,12011,0.1833796451800055
-bl_two_signal_strict__ni_k2_r4,R2,58395,11090,0.1899135199931501
-bl_two_signal_strict__ni_k2_r4,R3,48125,10383,0.21575064935064936
-bl_two_signal_strict__ni_k2_r4,R4,31856,8221,0.2580675539929684
-bl_two_signal_strict__ni_k2_r4,R5,40324,9107,0.2258456502331118
+bl_two_signal_strict__ni_k2_r4,R2,58395,11064,0.18946827639352684
+bl_two_signal_strict__ni_k2_r4,R3,48125,10362,0.2153142857142857
+bl_two_signal_strict__ni_k2_r4,R4,31856,8204,0.25753390256152686
+bl_two_signal_strict__ni_k2_r4,R5,40324,9061,0.22470489038785835
 bl_two_signal_strict__ni_k2_r4,NA,0,0,
 bl_two_signal_strict__ni_k3_r1,L1,56961,2309,0.040536507434911606
-bl_two_signal_strict__ni_k3_r1,L2,42151,4049,0.09605940547080734
-bl_two_signal_strict__ni_k3_r1,L3,32568,4337,0.13316752640628837
-bl_two_signal_strict__ni_k3_r1,L4,17383,3770,0.21687855951216706
-bl_two_signal_strict__ni_k3_r1,L5,41112,4986,0.1212784588441331
+bl_two_signal_strict__ni_k3_r1,L2,42151,4027,0.09553747242058314
+bl_two_signal_strict__ni_k3_r1,L3,32568,4328,0.13289118152788013
+bl_two_signal_strict__ni_k3_r1,L4,17383,3769,0.21682103204280043
+bl_two_signal_strict__ni_k3_r1,L5,41112,4885,0.11882175520529285
 bl_two_signal_strict__ni_k3_r1,R1,65498,1974,0.030138324834346086
-bl_two_signal_strict__ni_k3_r1,R2,58395,3267,0.05594657076804521
-bl_two_signal_strict__ni_k3_r1,R3,48125,4039,0.08392727272727273
-bl_two_signal_strict__ni_k3_r1,R4,31856,3673,0.11530010045203415
-bl_two_signal_strict__ni_k3_r1,R5,40324,3252,0.08064676123400456
+bl_two_signal_strict__ni_k3_r1,R2,58395,3229,0.05529583012244199
+bl_two_signal_strict__ni_k3_r1,R3,48125,4017,0.08347012987012987
+bl_two_signal_strict__ni_k3_r1,R4,31856,3653,0.11467227523857358
+bl_two_signal_strict__ni_k3_r1,R5,40324,3189,0.07908441622854875
 bl_two_signal_strict__ni_k3_r1,NA,0,0,
 bl_two_signal_strict__ni_k3_r2,L1,56961,2939,0.051596706518495114
-bl_two_signal_strict__ni_k3_r2,L2,42151,4465,0.10592868496595573
-bl_two_signal_strict__ni_k3_r2,L3,32568,4675,0.1435458118398428
-bl_two_signal_strict__ni_k3_r2,L4,17383,3964,0.22803888856929183
-bl_two_signal_strict__ni_k3_r2,L5,41112,5384,0.13095933060906792
+bl_two_signal_strict__ni_k3_r2,L2,42151,4443,0.10540675191573154
+bl_two_signal_strict__ni_k3_r2,L3,32568,4666,0.14326946696143453
+bl_two_signal_strict__ni_k3_r2,L4,17383,3963,0.2279813610999252
+bl_two_signal_strict__ni_k3_r2,L5,41112,5285,0.12855127456703638
 bl_two_signal_strict__ni_k3_r2,R1,65498,2703,0.04126843567742527
-bl_two_signal_strict__ni_k3_r2,R2,58395,3819,0.06539943488312355
-bl_two_signal_strict__ni_k3_r2,R3,48125,4497,0.09344415584415584
-bl_two_signal_strict__ni_k3_r2,R4,31856,3997,0.12547086891009543
-bl_two_signal_strict__ni_k3_r2,R5,40324,3706,0.09190556492411467
+bl_two_signal_strict__ni_k3_r2,R2,58395,3781,0.06474869423752033
+bl_two_signal_strict__ni_k3_r2,R3,48125,4475,0.09298701298701299
+bl_two_signal_strict__ni_k3_r2,R4,31856,3978,0.12487443495730789
+bl_two_signal_strict__ni_k3_r2,R5,40324,3646,0.09041761729987105
 bl_two_signal_strict__ni_k3_r2,NA,0,0,
 bl_two_signal_strict__ni_k3_r4,L1,56961,4069,0.07143484138270044
-bl_two_signal_strict__ni_k3_r4,L2,42151,5255,0.12467082631491543
-bl_two_signal_strict__ni_k3_r4,L3,32568,5254,0.16132399901744043
-bl_two_signal_strict__ni_k3_r4,L4,17383,4307,0.24777081056204336
-bl_two_signal_strict__ni_k3_r4,L5,41112,6133,0.14917785561393268
+bl_two_signal_strict__ni_k3_r4,L2,42151,5234,0.12417261749424688
+bl_two_signal_strict__ni_k3_r4,L3,32568,5246,0.16107835912552199
+bl_two_signal_strict__ni_k3_r4,L4,17383,4306,0.24771328309267676
+bl_two_signal_strict__ni_k3_r4,L5,41112,6036,0.14681844716870987
 bl_two_signal_strict__ni_k3_r4,R1,65498,4074,0.062200372530458944
-bl_two_signal_strict__ni_k3_r4,R2,58395,4839,0.0828666837914205
-bl_two_signal_strict__ni_k3_r4,R3,48125,5404,0.1122909090909091
-bl_two_signal_strict__ni_k3_r4,R4,31856,4649,0.14593797086891008
-bl_two_signal_strict__ni_k3_r4,R5,40324,4526,0.11224084912211091
+bl_two_signal_strict__ni_k3_r4,R2,58395,4803,0.0822501926534806
+bl_two_signal_strict__ni_k3_r4,R3,48125,5382,0.11183376623376623
+bl_two_signal_strict__ni_k3_r4,R4,31856,4631,0.1453729281767956
+bl_two_signal_strict__ni_k3_r4,R5,40324,4467,0.110777700624938
 bl_two_signal_strict__ni_k3_r4,NA,0,0,
 bl_two_signal_strict__ni_k5_r1,L1,56961,1768,0.031038780920278786
-bl_two_signal_strict__ni_k5_r1,L2,42151,3654,0.0866883347963275
-bl_two_signal_strict__ni_k5_r1,L3,32568,4074,0.12509211495946942
-bl_two_signal_strict__ni_k5_r1,L4,17383,3592,0.20663866996490823
-bl_two_signal_strict__ni_k5_r1,L5,41112,4591,0.11167055847441136
+bl_two_signal_strict__ni_k5_r1,L2,42151,3632,0.0861664017461033
+bl_two_signal_strict__ni_k5_r1,L3,32568,4064,0.12478506509457137
+bl_two_signal_strict__ni_k5_r1,L4,17383,3591,0.20658114249554163
+bl_two_signal_strict__ni_k5_r1,L5,41112,4489,0.10918953103716676
 bl_two_signal_strict__ni_k5_r1,R1,65498,1190,0.018168493694463952
-bl_two_signal_strict__ni_k5_r1,R2,58395,2777,0.04755544139053001
-bl_two_signal_strict__ni_k5_r1,R3,48125,3646,0.07576103896103896
-bl_two_signal_strict__ni_k5_r1,R4,31856,3368,0.10572576594676042
-bl_two_signal_strict__ni_k5_r1,R5,40324,2855,0.0708015077869259
+bl_two_signal_strict__ni_k5_r1,R2,58395,2738,0.04688757599109513
+bl_two_signal_strict__ni_k5_r1,R3,48125,3623,0.07528311688311688
+bl_two_signal_strict__ni_k5_r1,R4,31856,3347,0.10506654947262682
+bl_two_signal_strict__ni_k5_r1,R5,40324,2789,0.06916476540025791
 bl_two_signal_strict__ni_k5_r1,NA,0,0,
 bl_two_signal_strict__ni_k5_r2,L1,56961,1843,0.03235547128737206
-bl_two_signal_strict__ni_k5_r2,L2,42151,3696,0.08768475243766459
-bl_two_signal_strict__ni_k5_r2,L3,32568,4120,0.12650454433800049
-bl_two_signal_strict__ni_k5_r2,L4,17383,3618,0.20813438416844043
-bl_two_signal_strict__ni_k5_r2,L5,41112,4635,0.11274080560420316
+bl_two_signal_strict__ni_k5_r2,L2,42151,3674,0.08716281938744039
+bl_two_signal_strict__ni_k5_r2,L3,32568,4110,0.12619749447310244
+bl_two_signal_strict__ni_k5_r2,L4,17383,3617,0.2080768566990738
+bl_two_signal_strict__ni_k5_r2,L5,41112,4533,0.11025977816695855
 bl_two_signal_strict__ni_k5_r2,R1,65498,1272,0.01942044031878836
-bl_two_signal_strict__ni_k5_r2,R2,58395,2833,0.048514427605103175
-bl_two_signal_strict__ni_k5_r2,R3,48125,3700,0.07688311688311689
-bl_two_signal_strict__ni_k5_r2,R4,31856,3401,0.10676167754897037
-bl_two_signal_strict__ni_k5_r2,R5,40324,2897,0.07184307112389644
+bl_two_signal_strict__ni_k5_r2,R2,58395,2794,0.04784656220566829
+bl_two_signal_strict__ni_k5_r2,R3,48125,3677,0.07640519480519481
+bl_two_signal_strict__ni_k5_r2,R4,31856,3380,0.10610246107483677
+bl_two_signal_strict__ni_k5_r2,R5,40324,2833,0.0702559269913699
 bl_two_signal_strict__ni_k5_r2,NA,0,0,
 bl_two_signal_strict__ni_k5_r4,L1,56961,1941,0.03407594670037394
-bl_two_signal_strict__ni_k5_r4,L2,42151,3770,0.08944034542478232
-bl_two_signal_strict__ni_k5_r4,L3,32568,4191,0.12868459837877672
-bl_two_signal_strict__ni_k5_r4,L4,17383,3649,0.20991773571880573
-bl_two_signal_strict__ni_k5_r4,L5,41112,4733,0.11512453784783032
+bl_two_signal_strict__ni_k5_r4,L2,42151,3748,0.08891841237455814
+bl_two_signal_strict__ni_k5_r4,L3,32568,4181,0.12837754851387864
+bl_two_signal_strict__ni_k5_r4,L4,17383,3648,0.2098602082494391
+bl_two_signal_strict__ni_k5_r4,L5,41112,4631,0.11264351041058572
 bl_two_signal_strict__ni_k5_r4,R1,65498,1427,0.02178692479159669
-bl_two_signal_strict__ni_k5_r4,R2,58395,2946,0.05044952478808117
-bl_two_signal_strict__ni_k5_r4,R3,48125,3823,0.07943896103896105
-bl_two_signal_strict__ni_k5_r4,R4,31856,3485,0.10939854344550477
-bl_two_signal_strict__ni_k5_r4,R5,40324,2996,0.07429818470389843
+bl_two_signal_strict__ni_k5_r4,R2,58395,2907,0.04978165938864629
+bl_two_signal_strict__ni_k5_r4,R3,48125,3800,0.07896103896103897
+bl_two_signal_strict__ni_k5_r4,R4,31856,3464,0.10873932697137118
+bl_two_signal_strict__ni_k5_r4,R5,40324,2934,0.07276063882551334
 bl_two_signal_strict__ni_k5_r4,NA,0,0,
 wl_model_agreement__ni_k2_r1,L1,56961,23038,0.4044521690279314
 wl_model_agreement__ni_k2_r1,L2,42151,33984,0.8062442172190458
