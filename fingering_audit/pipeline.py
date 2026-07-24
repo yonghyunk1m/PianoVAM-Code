@@ -43,6 +43,23 @@ def reconcile_exact_queue_selection_universe(selection_ids) -> bool:
     return _queue_selection_ids(selection_ids) == EXPECTED_QUEUE_SELECTION_IDS
 
 
+def reconcile_exact_queue_selection_universes(
+    full_selection_ids,
+    gt_selection_ids,
+) -> dict[str, bool]:
+    full_ids = _queue_selection_ids(full_selection_ids)
+    gt_ids = _queue_selection_ids(gt_selection_ids)
+    return {
+        "exact_full_queue_selection_universe": (
+            full_ids == EXPECTED_QUEUE_SELECTION_IDS
+        ),
+        "exact_gt_queue_selection_universe": (
+            gt_ids == EXPECTED_QUEUE_SELECTION_IDS
+        ),
+        "exact_queue_selection_key_parity": full_ids == gt_ids,
+    }
+
+
 def run_research(
     config: AuditConfig,
     *,
@@ -106,12 +123,22 @@ def run_research(
 
         stage = "study"
         study = build_study(config, physical_policy=physical_policy)
-        actual_queue_ids = _queue_selection_ids(study.selections_full)
-        exact_queue_selection_universe = (
-            reconcile_exact_queue_selection_universe(
-                study.selections_full
+        queue_universe_reconciliations = (
+            reconcile_exact_queue_selection_universes(
+                study.selections_full,
+                study.selections_gt,
             )
         )
+        exact_queue_selection_universe = all(
+            queue_universe_reconciliations.values()
+        )
+        if not exact_queue_selection_universe:
+            failed = sorted(
+                name
+                for name, passed in queue_universe_reconciliations.items()
+                if not passed
+            )
+            raise ValueError(f"failed reconciliation checks: {failed}")
         data_dir = manifest.run_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         if pig_notes is not None:
@@ -158,48 +185,67 @@ def run_research(
             manifest.run_dir / "report/research_report.md",
         )
 
-        queue_variants = {}
-        for set_id in actual_queue_ids:
-            candidate = (
+        queue_variants = {
+            set_id: (
                 set_id.split("__", 1)[1] if "__" in set_id else set_id
             )
-            if candidate in study.queue_masks_full and candidate.startswith(
-                "ni_"
-            ):
-                queue_variants[set_id] = candidate
-        mandatory_masks_contained = all(
-            (
+            for set_id in EXPECTED_QUEUE_SELECTION_IDS
+        }
+        mandatory_masks_contained = (
+            exact_queue_selection_universe
+            and all(
                 (
-                    study.queue_masks_full["physical_must_alert"]
-                    <= study.selections_full[set_id]
-                ).all()
-                and (
-                    study.queue_masks_full[variant]
-                    <= study.selections_full[set_id]
-                ).all()
-                and (
-                    study.queue_masks_gt["physical_must_alert"]
-                    <= study.selections_gt[set_id]
-                ).all()
-                and (
-                    study.queue_masks_gt[variant]
-                    <= study.selections_gt[set_id]
-                ).all()
+                    (
+                        study.queue_masks_full["physical_must_alert"]
+                        <= study.selections_full[set_id]
+                    ).all()
+                    and (
+                        study.queue_masks_full[variant]
+                        <= study.selections_full[set_id]
+                    ).all()
+                    and (
+                        study.queue_masks_gt["physical_must_alert"]
+                        <= study.selections_gt[set_id]
+                    ).all()
+                    and (
+                        study.queue_masks_gt[variant]
+                        <= study.selections_gt[set_id]
+                    ).all()
+                )
+                for set_id, variant in queue_variants.items()
             )
-            for set_id, variant in queue_variants.items()
         )
-        integrity_disjoint_from_assigned = all(
-            (
-                not (
-                    study.queue_masks_full["data_integrity_must_resolve"]
-                    & study.selections_full[set_id]
-                ).any()
-                and not (
-                    study.queue_masks_gt["data_integrity_must_resolve"]
-                    & study.selections_gt[set_id]
-                ).any()
+        integrity_disjoint_from_assigned = (
+            exact_queue_selection_universe
+            and not (
+                study.queue_masks_full["physical_must_alert"]
+                & study.queue_masks_full[
+                    "data_integrity_must_resolve"
+                ]
+            ).any()
+            and not (
+                study.queue_masks_gt["physical_must_alert"]
+                & study.queue_masks_gt[
+                    "data_integrity_must_resolve"
+                ]
+            ).any()
+            and all(
+                (
+                    not (
+                        study.queue_masks_full[
+                            "data_integrity_must_resolve"
+                        ]
+                        & study.selections_full[set_id]
+                    ).any()
+                    and not (
+                        study.queue_masks_gt[
+                            "data_integrity_must_resolve"
+                        ]
+                        & study.selections_gt[set_id]
+                    ).any()
+                )
+                for set_id in queue_variants
             )
-            for set_id in queue_variants
         )
         queue_summary = pd.read_csv(
             manifest.run_dir / "results/queue_summary.csv"
@@ -259,14 +305,11 @@ def run_research(
                 for row in tables["filter_sets"].itertuples()
             ),
             "report_files_present": all(path.is_file() for path in files),
-            "exact_queue_selection_universe": (
-                exact_queue_selection_universe
-            ),
-            "mandatory_masks_contained": (
-                bool(queue_variants) and mandatory_masks_contained
-            ),
+            **queue_universe_reconciliations,
+            "exact_queue_selection_universe": exact_queue_selection_universe,
+            "mandatory_masks_contained": mandatory_masks_contained,
             "integrity_disjoint_from_assigned": (
-                bool(queue_variants) and integrity_disjoint_from_assigned
+                integrity_disjoint_from_assigned
             ),
             "queue_summary_reconciles": (
                 EXPECTED_QUEUE_SELECTION_IDS == set(filter_counts)

@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from fingering_audit import pipeline as pipeline_module
 from fingering_audit.config import load_config
 from fingering_audit.manifest import RunManifest, sha256_file, stage_key
+from fingering_audit.report import EXPECTED_QUEUE_SELECTION_IDS
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -80,3 +82,66 @@ def test_failed_exact_queue_universe_cannot_close_terminal_gate(tmp_path):
     assert not (
         manifest.run_dir / "RECOMMENDATION_GATE_CLOSED.json"
     ).exists()
+
+
+def _assert_gt_only_universe_failure_blocks_both_markers(
+    tmp_path, gt_selection_ids
+):
+    reconcile = getattr(
+        pipeline_module,
+        "reconcile_exact_queue_selection_universes",
+        lambda full_ids, gt_ids: {
+            "exact_full_queue_selection_universe": None,
+            "exact_gt_queue_selection_universe": None,
+            "exact_queue_selection_key_parity": None,
+        },
+    )
+    reconciliations = reconcile(
+        EXPECTED_QUEUE_SELECTION_IDS,
+        gt_selection_ids,
+    )
+    assert reconciliations[
+        "exact_full_queue_selection_universe"
+    ] is True
+    assert reconciliations[
+        "exact_gt_queue_selection_universe"
+    ] is False
+    assert reconciliations["exact_queue_selection_key_parity"] is False
+
+    cfg = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+    )
+    manifest = RunManifest.start(cfg, run_id="gt-universe-failure")
+    with pytest.raises(ValueError, match="exact_gt"):
+        manifest.finalize(reconciliations)
+    with pytest.raises(ValueError, match="exact_gt"):
+        manifest.close_recommendation_gate(
+            "PIG unavailable",
+            reconciliations,
+        )
+    assert not (manifest.run_dir / "SUCCESS.json").exists()
+    assert not (
+        manifest.run_dir / "RECOMMENDATION_GATE_CLOSED.json"
+    ).exists()
+
+
+def test_gt_only_missing_selection_blocks_both_terminal_markers(tmp_path):
+    missing = next(iter(EXPECTED_QUEUE_SELECTION_IDS))
+    gt_selection_ids = set(EXPECTED_QUEUE_SELECTION_IDS)
+    gt_selection_ids.remove(missing)
+
+    _assert_gt_only_universe_failure_blocks_both_markers(
+        tmp_path,
+        gt_selection_ids,
+    )
+
+
+def test_gt_only_extra_selection_blocks_both_terminal_markers(tmp_path):
+    gt_selection_ids = set(EXPECTED_QUEUE_SELECTION_IDS)
+    gt_selection_ids.add("unexpected_gt_method__ni_k2_r1")
+
+    _assert_gt_only_universe_failure_blocks_both_markers(
+        tmp_path,
+        gt_selection_ids,
+    )

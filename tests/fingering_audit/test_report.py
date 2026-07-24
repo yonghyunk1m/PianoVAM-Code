@@ -241,6 +241,46 @@ def test_pig_absent_run_keeps_diagnostics_and_closes_success_gate(
 
 
 @pytest.mark.filterwarnings("ignore:All-NaN slice encountered:RuntimeWarning")
+def test_pipeline_rejects_gt_only_missing_selection_before_reports(
+    tmp_path, monkeypatch
+):
+    config = replace(
+        load_config(FIXTURES / "research-minimal.yaml"),
+        artifact_root=tmp_path,
+    )
+    original_build = pipeline_module.build_study
+    missing = next(iter(EXPECTED_QUEUE_SELECTION_IDS))
+
+    def build_with_missing_gt_selection(config, physical_policy=None):
+        study = original_build(config, physical_policy=physical_policy)
+        selections_gt = dict(study.selections_gt)
+        selections_gt.pop(missing)
+        return replace(study, selections_gt=selections_gt)
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_study",
+        build_with_missing_gt_selection,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="exact_gt_queue_selection_universe",
+    ):
+        pipeline_module.run_research(
+            config,
+            run_label="gt-only-missing",
+        )
+
+    run_dir = next(tmp_path.iterdir())
+    assert not (run_dir / "SUCCESS.json").exists()
+    assert not (
+        run_dir / "RECOMMENDATION_GATE_CLOSED.json"
+    ).exists()
+    assert not (run_dir / "report/research_report.md").exists()
+
+
+@pytest.mark.filterwarnings("ignore:All-NaN slice encountered:RuntimeWarning")
 def test_failed_physical_validation_emits_diagnostics_and_closes_gate(
     tmp_path, monkeypatch
 ):
