@@ -7,7 +7,7 @@ from typing import Mapping
 import numpy as np
 import pandas as pd
 
-from ManualCheck.hard_part_selector import select_hard_parts
+from ManualCheck.hard_part_selector import load_fingering_tsv, select_hard_parts
 
 from .canonical import attach_ground_truth, load_ground_truth, load_pianovam_notes
 from .contracts import AuditConfig
@@ -94,6 +94,7 @@ def _valid_assignment(frame: pd.DataFrame) -> pd.Series:
     return (
         frame["pred_hand"].isin(["L", "R"])
         & finger.between(1, 5).fillna(False)
+        & finger.mod(1).eq(0).fillna(False)
     )
 
 
@@ -101,30 +102,24 @@ def _legacy_default_mask(
     notes: pd.DataFrame, eligible: pd.Series
 ) -> pd.Series:
     selected = pd.Series(False, index=notes.index)
-    for _, indices in notes.groupby("recording_id", sort=True).indices.items():
+    for source_path, indices in notes.groupby(
+        "source_path", sort=True
+    ).indices.items():
         positions = np.asarray(indices)
-        positions = positions[eligible.iloc[positions].to_numpy(dtype=bool)]
-        if not len(positions):
-            continue
-        local = notes.iloc[positions]
-        frame = pd.DataFrame(
-            {
-                "onset": pd.to_numeric(local["onset_sec"], errors="coerce"),
-                "key_offset": pd.to_numeric(
-                    local["offset_sec"], errors="coerce"
-                ),
-                "note": pd.to_numeric(local["pitch"], errors="coerce"),
-                "hand": local["pred_hand"].to_numpy(),
-                "finger": local["pred_finger"].to_numpy(),
-                "finger_int": local["pred_finger"].to_numpy(),
-            }
-        ).reset_index(drop=True)
+        frame = load_fingering_tsv(source_path).reset_index(drop=True)
+        if len(frame) != len(positions):
+            raise ValueError(f"legacy selector length mismatch: {source_path}")
+        for column in ("onset", "key_offset", "note"):
+            if column in frame:
+                frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        invalid = ~eligible.iloc[positions].to_numpy(dtype=bool)
+        frame.loc[invalid, "hand"] = "Noinfo"
         result = select_hard_parts(
             frame,
             enabled_rules=["impossible_fingering", "fast_jump", "noinfo_cluster"],
         )
         if len(result) != len(positions):
-            raise ValueError("legacy selector length mismatch")
+            raise ValueError(f"legacy selector length mismatch: {source_path}")
         selected.iloc[positions] = result["is_hard"].to_numpy(dtype=bool)
     return selected
 
@@ -524,8 +519,15 @@ def _standalone_noinfo_sets(
     queue_masks: Mapping[str, pd.Series],
 ) -> dict[str, pd.Series]:
     variants = (*NOINFO_VARIANTS, *NOINFO_CALIBRATED_VARIANTS)
+    count = len(queue_masks["data_integrity_must_resolve"])
+    empty = pd.Series(False, index=range(count))
     return {
-        variant: pd.Series(queue_masks[variant]).reset_index(drop=True)
+        variant: combine_mandatory(
+            risk=empty,
+            physical=queue_masks["physical_must_alert"],
+            noinfo=queue_masks[variant],
+            integrity=queue_masks["data_integrity_must_resolve"],
+        )
         for variant in variants
         if variant in queue_masks
     }
@@ -703,12 +705,14 @@ def _summary_selections(
 ) -> tuple[dict[str, pd.Series], dict[str, pd.Series], pd.DataFrame]:
     full = dict(study.selections_full)
     gt = dict(study.selections_gt)
+    standalone_full = _standalone_noinfo_sets(study.queue_masks_full)
+    standalone_gt = _standalone_noinfo_sets(study.queue_masks_gt)
     for variant in study.noinfo_sensitivity.get(
         "variant", pd.Series(dtype="string")
     ).dropna().unique():
         if variant in study.queue_masks_full:
-            full.setdefault(variant, study.queue_masks_full[variant])
-            gt.setdefault(variant, study.queue_masks_gt[variant])
+            full[variant] = standalone_full[variant]
+            gt[variant] = standalone_gt[variant]
     metadata = study.set_metadata.copy()
     missing = set(full) - set(metadata["set_id"])
     if missing:
@@ -803,17 +807,12 @@ def summarize_study(
             set_id=set_id,
         )
         assigned_selection = gt_mask.loc[assigned_gt].reset_index(drop=True)
-        finger = per_finger_metrics(
+        finger = per_finger_metrics(gt_mask, study.labels, set_id=set_id)
+        assigned_finger = per_finger_metrics(
             assigned_selection, assigned_labels, set_id=set_id
         )
         per_finger.append(finger.assign(scope="all_gt"))
-        per_finger.append(
-            per_finger_metrics(
-                assigned_selection,
-                assigned_labels,
-                set_id=set_id,
-            ).assign(scope="assigned_gt")
-        )
+        per_finger.append(assigned_finger.assign(scope="assigned_gt"))
         workload.append(
             workload_per_predicted_finger(
                 full_mask.loc[assigned_full].reset_index(drop=True),

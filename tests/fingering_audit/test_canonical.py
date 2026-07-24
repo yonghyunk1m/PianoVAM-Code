@@ -9,6 +9,7 @@ from fingering_audit.canonical import (
 )
 from fingering_audit.contracts import AuditConfig
 from fingering_audit.evaluation.labels import label_errors
+from fingering_audit.features.audit_flags import compute_audit_flags
 from fingering_audit.study import build_study
 
 
@@ -108,3 +109,48 @@ def test_loader_and_study_preserve_malformed_rows_as_integrity(tmp_path):
         False,
         False,
     ]
+
+
+def test_fractional_finger_is_preserved_for_integrity_audit(tmp_path):
+    source = tmp_path / "pianovam"
+    source.mkdir()
+    (source / "fractional.tsv").write_text(
+        "onset\tkey_offset\tnote\thand\tfinger\tvelocity\n"
+        "0.0\t0.4\t60\tR\t1\t80\n"
+        "0.5\t0.9\t62\tR\t2.5\t80\n",
+        encoding="utf-8",
+    )
+    ground_truth = tmp_path / "gt.py"
+    ground_truth.write_text(
+        "GT_MAP = {'fractional': [('R', 1), ('R', 2)]}\n",
+        encoding="utf-8",
+    )
+
+    notes = load_pianovam_notes(source)
+    flags = compute_audit_flags(notes.assign(compound_fingering=False))
+
+    assert notes.loc[1, "pred_finger"] == 2.5
+    assert pd.isna(notes.loc[1, "pred_finger_id"])
+    assert "non_integral_finger" in flags.integrity_reasons.iloc[1]
+    config = AuditConfig(
+        schema_version=1,
+        noninteractive=True,
+        random_seed=7,
+        repository_root=Path.cwd(),
+        pianovam_fingering_dir=source,
+        ground_truth_module=ground_truth,
+        pig_search_roots=(),
+        detector_search_roots=(),
+        artifact_root=tmp_path / "artifacts",
+        target_budgets=(),
+        overwrite_sources=False,
+        materialize_missing_detector_outputs=False,
+        strict_recommendation_gate=True,
+    )
+
+    study = build_study(config)
+
+    assert study.queue_masks_full[
+        "data_integrity_must_resolve"
+    ].tolist() == [False, True]
+    assert study.features["hmm_feature_available"].tolist() == [True, False]

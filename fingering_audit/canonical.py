@@ -21,12 +21,11 @@ def _load_tsv(path: Path) -> pd.DataFrame:
     return frame
 
 
-def _finger(value) -> int | None:
+def _finger(value) -> float | None:
     try:
-        finger = int(value)
+        return float(value)
     except (TypeError, ValueError, OverflowError):
         return None
-    return finger if 1 <= finger <= 5 else None
 
 
 def _hand(value) -> str | None:
@@ -47,7 +46,11 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
         hand_source = frame.get("hand", pd.Series(pd.NA, index=frame.index))
         finger_source = frame.get("finger", pd.Series(pd.NA, index=frame.index))
         hands = hand_source.map(_hand)
-        fingers = finger_source.map(_finger).where(hands.notna())
+        fingers = pd.Series(
+            finger_source.map(_finger).where(hands.notna()),
+            index=frame.index,
+            dtype="Float64",
+        )
         pitches = pd.to_numeric(frame["note"], errors="coerce").astype(float)
         offsets = (
             pd.to_numeric(frame["key_offset"], errors="coerce")
@@ -59,8 +62,14 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
             if "velocity" in frame
             else pd.Series(pd.NA, index=frame.index, dtype="Int64")
         )
-        finger_ids = hands.str.cat(fingers.astype("Int64").astype("string"))
-        finger_ids = finger_ids.where(hands.notna() & fingers.notna())
+        valid_finger = (
+            fingers.between(1, 5).fillna(False)
+            & fingers.mod(1).eq(0).fillna(False)
+        )
+        finger_ids = hands.str.cat(
+            fingers.where(valid_finger).astype("Int64").astype("string")
+        )
+        finger_ids = finger_ids.where(hands.notna() & valid_finger)
         recordings.append(
             pd.DataFrame(
                 {
@@ -72,7 +81,7 @@ def load_pianovam_notes(path: Path) -> pd.DataFrame:
                     "pitch": pitches,
                     "velocity": velocities,
                     "pred_hand": hands,
-                    "pred_finger": fingers.astype("Int64"),
+                    "pred_finger": fingers,
                     "pred_finger_id": finger_ids,
                     "source_path": str(tsv_path.resolve()),
                 }

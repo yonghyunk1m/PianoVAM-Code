@@ -4,11 +4,19 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from ManualCheck.hard_part_selector import (
+    load_fingering_tsv,
+    select_hard_parts,
+)
+from fingering_audit.canonical import load_pianovam_notes
+from fingering_audit.features.audit_flags import compute_audit_flags
 from fingering_audit.study import (
     NOINFO_VARIANTS,
     StudyData,
     _combined_sets,
+    _legacy_default_mask,
     _oof_noinfo_tail,
+    _valid_assignment,
     summarize_study,
 )
 
@@ -149,6 +157,62 @@ def test_all_standalone_noinfo_variants_have_finger_outputs(study):
     assert expected <= set(tables["workload_per_finger"]["set_id"])
 
 
+def test_legacy_default_preserves_original_noinfo_cluster_context(tmp_path):
+    source = tmp_path / "legacy.tsv"
+    source.write_text(
+        "onset\tkey_offset\tnote\thand\tfinger\n"
+        "0.0\t0.5\t60\tR\t1\n"
+        "1.0\t1.5\t60\tR\t1\n"
+        "2.0\t2.5\t60\tNoinfo\tNoinfo\n"
+        "3.0\t3.5\t60\tNoinfo\tNoinfo\n"
+        "4.0\t4.5\t60\tNoinfo\tNoinfo\n"
+        "5.0\t5.5\t60\tR\t1\n"
+        "6.0\t6.5\t60\tR\t1\n",
+        encoding="utf-8",
+    )
+    notes = load_pianovam_notes(tmp_path)
+    audit_notes = notes.assign(compound_fingering=False)
+    integrity = compute_audit_flags(audit_notes).integrity
+    eligible = _valid_assignment(notes) & ~integrity
+    expected = select_hard_parts(
+        load_fingering_tsv(source),
+        enabled_rules=[
+            "impossible_fingering",
+            "fast_jump",
+            "noinfo_cluster",
+        ],
+    )["is_hard"]
+
+    actual = _legacy_default_mask(notes, eligible)
+
+    assert expected.tolist() == [True, True, False, False, False, True, True]
+    assert actual.tolist() == expected.tolist()
+
+
+def test_standalone_noinfo_id_matches_sensitivity_union(study):
+    tables = summarize_study(study, "fixture", seed=7)
+    variant = "ni_k2_r1"
+    sensitivity = tables["noinfo_sensitivity"].query(
+        "calibration == 'fixed' and variant == @variant"
+    ).iloc[0]
+    standalone = tables["filter_sets"].query("set_id == @variant").iloc[0]
+    finger_count = (
+        tables["per_finger"]
+        .query("set_id == @variant and scope == 'all_gt'")["selected_notes"]
+        .sum()
+    )
+    workload_count = (
+        tables["workload_per_finger"]
+        .query("set_id == @variant")["hard_count"]
+        .sum()
+    )
+
+    assert sensitivity["hard_count"] == 2
+    assert standalone["hard_count"] == sensitivity["hard_count"]
+    assert finger_count == sensitivity["hard_count"]
+    assert workload_count == sensitivity["hard_count"]
+
+
 def test_oof_noinfo_tail_uses_other_recordings_and_nonzero_scores_only():
     notes = pd.DataFrame(
         {
@@ -243,10 +307,68 @@ def test_assigned_metrics_and_workload_exclude_integrity_rows():
     assert row["hard_percentage_assigned_notes"] == 1.0
     finger = tables["per_finger"].query(
         "set_id == 'base' and finger_id == 'R1'"
-    )
-    assert set(finger["error_recall"]) == {1.0}
+    ).set_index("scope")
+    assert finger.loc["all_gt", "error_recall"] == 0.5
+    assert finger.loc["assigned_gt", "error_recall"] == 1.0
     workload = tables["workload_per_finger"].query(
         "set_id == 'base' and predicted_finger_id == 'R1'"
     ).iloc[0]
     assert workload["eligible_notes"] == 1
     assert workload["hard_percentage"] == 1.0
+
+
+def test_per_finger_all_gt_and_assigned_gt_use_distinct_universes():
+    notes = pd.DataFrame(
+        {
+            "note_id": ["missing", "assigned"],
+            "recording_id": ["r", "r"],
+            "pred_hand": [pd.NA, "R"],
+            "pred_finger": pd.array([pd.NA, 1], dtype="Int64"),
+            "pred_finger_id": [pd.NA, "R1"],
+        }
+    )
+    labels = notes.assign(
+        gt_finger_id=["R1", "R1"],
+        exact_error=[True, True],
+        hand_error=[True, False],
+        within_hand_finger_error=[False, True],
+    )
+    selected = pd.Series([False, True])
+    integrity = pd.Series([True, False])
+    queues = {
+        "physical_candidate_diagnostic": pd.Series([False, False]),
+        "physical_must_alert": pd.Series([False, False]),
+        "data_integrity_must_resolve": integrity,
+    }
+    scope_study = StudyData(
+        notes=notes,
+        labels=labels,
+        features=pd.DataFrame(index=notes.index),
+        selections_full={"base": selected},
+        selections_gt={"base": selected.copy()},
+        set_metadata=pd.DataFrame(
+            [
+                {
+                    "set_id": "base",
+                    "strategy": "fixture",
+                    "evidence_grade": "fixture",
+                    "threshold_summary": "fixture",
+                }
+            ]
+        ),
+        fold_thresholds=pd.DataFrame(),
+        queue_masks_full=queues,
+        queue_masks_gt={name: mask.copy() for name, mask in queues.items()},
+        noinfo_sensitivity=pd.DataFrame(),
+    )
+
+    tables = summarize_study(scope_study, "fixture", seed=7)
+
+    filter_row = tables["filter_sets"].iloc[0]
+    finger = tables["per_finger"].query(
+        "set_id == 'base' and finger_id == 'R1'"
+    ).set_index("scope")
+    assert filter_row["gt_error_recall"] == 0.5
+    assert filter_row["assigned_gt_error_recall"] == 1.0
+    assert finger.loc["all_gt", "error_recall"] == 0.5
+    assert finger.loc["assigned_gt", "error_recall"] == 1.0
