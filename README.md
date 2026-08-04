@@ -125,7 +125,7 @@ If you find this dataset or code useful in your research, please cite the follow
 ```bibtex
 @inproceedings{kim2025pianovam,
   title={PianoVAM: A Multimodal Piano Performance Dataset},
-  author={Yonghyun Kim and Junhyung Park and Joonhyung Bae and Taegyun Kwon and Kirak Kim and Alexander Lerch and Juhan Nam},
+  author={Kim, Yonghyun and Park, Junhyung and Bae, Joonhyung and Kim, Kirak and Kwon, Taegyun and Lerch, Alexander and Nam, Juhan},
   booktitle={Proceedings of the 26th International Society for Music Information Retrieval Conference (ISMIR)},
   year={2025},
   address={Daejeon, South Korea}
@@ -137,7 +137,7 @@ If you find this dataset or code useful in your research, please cite the follow
 ```bibtex
 @misc{park2025toolkits,
   title={Two Web Toolkits for Multimodal Piano Performance Dataset Acquisition and Fingering Annotation},
-  author={Junhyung Park and Yonghyun Kim and Joonhyung Bae and Taegyun Kwon and Kirak Kim and Alexander Lerch and Juhan Nam},
+  author={Park, Junhyung and Kim, Yonghyun and Bae, Joonhyung and Kim, Kirak and Kwon, Taegyun and Lerch, Alexander and Nam, Juhan},
   howpublished={Late-Breaking Demo of the 26th International Society for Music Information Retrieval Conference (ISMIR)},
   year={2025}
 }
