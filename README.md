@@ -42,8 +42,7 @@ This repository offers two Graphical User Interface (GUI) toolkits that support 
 ```
 PianoVAM-Code/
 ├── FingeringDetection/   # Code for the ASDF fingering annotation toolkit
-│   ├── ASDF.py           # ASDF Streamlit app (entry point)
-│   └── groundtruth/      # Manually annotated fingering ground truth (TSV)
+│   └── ASDF.py           # ASDF Streamlit app (entry point)
 ├── PreProcessing/       # Data pre-processing (dataset download, audio-MIDI alignment, etc.)
 │   ├── Dataset-Download/
 │   ├── Audio-MIDI-Alignment/
@@ -93,15 +92,7 @@ pip install -r requirements.txt
 
 #### Fingering Ground Truth
 
-Manually annotated fingering labels used to evaluate the fingering detection algorithm are in `FingeringDetection/groundtruth/`, one TSV file per recording, named by the recording basename (e.g. `2024-02-17_22-33-45.tsv`).
-
-| Column | Description |
-|--------|-------------|
-| `note_index` | 0-based index of the note in the recording's MIDI file, sorted by onset time |
-| `hand` | `L` (left) or `R` (right) |
-| `finger` | `1` thumb, `2` index, `3` middle, `4` ring, `5` pinky |
-
-Coverage: the first 300 notes of `2024-02-17_22-33-45` and the first 150 notes of the other 10 recordings (11 recordings, 1,800 notes in total). The same labels are available as Python lists in `FingeringDetection/detection/fingergt.py`, which the evaluation code imports.
+Manually annotated fingering ground truth (11 recordings) is available in the [`Fingering_GT/`](https://huggingface.co/datasets/PianoVAM/PianoVAM_v1/tree/main/Fingering_GT) folder of the PianoVAM dataset on HuggingFace.
 
 #### Download PianoVAM Dataset
 

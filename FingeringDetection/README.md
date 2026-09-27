@@ -8,8 +8,7 @@ FingeringDetection/
 │   ├── main.py         # MediaPipe data generation
 │   ├── midicomparison.py
 │   ├── floatinghands.py
-│   └── fingergt.py     # Ground-truth fingering as Python lists (used by evaluation)
-├── groundtruth/        # Same ground-truth fingering as TSV (note_index, hand, finger), one file per recording
+│   └── fingergt.py
 ├── visualization/      # Fingering visualization
 │   └── stroll.py       # MIDI piano roll
 ├── fingering_pickles/  # Pre-finger labeling results (per-frame key-hand correspondence)
