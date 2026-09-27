@@ -35,12 +35,15 @@ This repository offers two Graphical User Interface (GUI) toolkits that support 
       * Allows users to calibrate the keyboard area within the video and extract hand skeleton data using MediaPipe Hands.
       * The algorithm automatically suggests likely fingering candidates for each note.
       * An interactive interface highlights notes requiring manual review, allowing users to visually verify and easily assign or correct fingering labels while watching the video.
+  * **Location**: `FingeringDetection/ASDF.py` (Streamlit app, version used for the ISMIR 2025 paper). Run with `streamlit run FingeringDetection/ASDF.py`. It covers both semi-automatic fingering extraction ('Pre-finger labeling' + 'Label' tabs) and fully manual annotation for auditing ('Groundtruth annotation' tab). See [`FingeringDetection/README.md`](FingeringDetection/README.md) for details.
 
 ## 📂 Repository Structure
 
 ```
 PianoVAM-Code/
 ├── FingeringDetection/   # Code for the ASDF fingering annotation toolkit
+│   ├── ASDF.py           # ASDF Streamlit app (entry point)
+│   └── groundtruth/      # Manually annotated fingering ground truth (TSV)
 ├── PreProcessing/       # Data pre-processing (dataset download, audio-MIDI alignment, etc.)
 │   ├── Dataset-Download/
 │   ├── Audio-MIDI-Alignment/
@@ -87,6 +90,18 @@ pip install -r requirements.txt
 3.  Calibrate the keyboard area in the 'Keyboard Detection' tab and extract hand data in the 'Generate Mediapipe Data' tab.
 4.  Generate automated fingering candidates from the 'Pre-labeling' tab.
 5.  Use the interactive interface in the 'Labeling' tab to review and correct the suggested fingerings.
+
+#### Fingering Ground Truth
+
+Manually annotated fingering labels used to evaluate the fingering detection algorithm are in `FingeringDetection/groundtruth/`, one TSV file per recording, named by the recording basename (e.g. `2024-02-17_22-33-45.tsv`).
+
+| Column | Description |
+|--------|-------------|
+| `note_index` | 0-based index of the note in the recording's MIDI file, sorted by onset time |
+| `hand` | `L` (left) or `R` (right) |
+| `finger` | `1` thumb, `2` index, `3` middle, `4` ring, `5` pinky |
+
+Coverage: the first 300 notes of `2024-02-17_22-33-45` and the first 150 notes of the other 10 recordings (11 recordings, 1,800 notes in total). The same labels are available as Python lists in `FingeringDetection/detection/fingergt.py`, which the evaluation code imports.
 
 #### Download PianoVAM Dataset
 

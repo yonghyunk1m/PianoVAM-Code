@@ -2,3 +2,4 @@
 *.mid
 *.tsv
 *.json
+!FingeringDetection/groundtruth/*.tsv
